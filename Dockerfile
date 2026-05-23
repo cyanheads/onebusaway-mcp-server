@@ -1,12 +1,15 @@
 # ==============================================================================
 # Build Stage
 #
-# This stage installs all dependencies (including dev), builds the TypeScript
-# source code into JavaScript, and prepares the production assets.
+# Uses Node.js (not bun) so that tsx/tsc/tsc-alias can run under a real node
+# binary. The runtime (production) stage still uses bun.
 # ==============================================================================
-FROM oven/bun:1.3 AS build
+FROM node:24-slim AS build
 
 WORKDIR /usr/src/app
+
+# Install bun for fast dependency resolution
+RUN npm install -g bun@1.3
 
 # Copy dependency manifests for optimized layer caching
 COPY package.json bun.lock ./
@@ -17,8 +20,8 @@ RUN bun install --frozen-lockfile
 # Copy the rest of the source code
 COPY . .
 
-# Build the application
-RUN bun run build
+# Build the application (npm run uses node, not bun, to exec tsx)
+RUN npm run build
 
 
 # ==============================================================================
