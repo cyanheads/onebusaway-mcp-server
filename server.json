@@ -1,9 +1,9 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "onebusaway-mcp-server",
-  "description": "",
+  "name": "cyanheads/onebusaway-mcp-server",
+  "description": "MCP server for OneBusAway transit: stops, routes, arrivals, vehicle positions, and schedules.",
   "repository": {
-    "url": "",
+    "url": "https://github.com/cyanheads/onebusaway-mcp-server",
     "source": "github"
   },
   "version": "0.1.0",

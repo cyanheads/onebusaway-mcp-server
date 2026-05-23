@@ -5,17 +5,51 @@
  */
 
 import { createApp } from '@cyanheads/mcp-ts-core';
-import { echoTool } from './mcp-server/tools/definitions/echo.tool.js';
-import { echoAppTool } from './mcp-server/tools/definitions/echo-app.app-tool.js';
-import { echoResource } from './mcp-server/resources/definitions/echo.resource.js';
-import { echoAppUiResource } from './mcp-server/resources/definitions/echo-app-ui.app-resource.js';
-import { echoPrompt } from './mcp-server/prompts/definitions/echo.prompt.js';
+import { getServerConfig } from './config/server-config.js';
+import { routeResource } from './mcp-server/resources/definitions/route.resource.js';
+// Resources
+import { stopResource } from './mcp-server/resources/definitions/stop.resource.js';
+import { findRoutes } from './mcp-server/tools/definitions/find-routes.tool.js';
+import { findStops } from './mcp-server/tools/definitions/find-stops.tool.js';
+import { getArrivals } from './mcp-server/tools/definitions/get-arrivals.tool.js';
+import { getRoute } from './mcp-server/tools/definitions/get-route.tool.js';
+import { getScheduleForRoute } from './mcp-server/tools/definitions/get-schedule-for-route.tool.js';
+import { getScheduleForStop } from './mcp-server/tools/definitions/get-schedule-for-stop.tool.js';
+import { getStop } from './mcp-server/tools/definitions/get-stop.tool.js';
+import { getTrip } from './mcp-server/tools/definitions/get-trip.tool.js';
+import { getVehicles } from './mcp-server/tools/definitions/get-vehicles.tool.js';
+// Tools
+import { listAgencies } from './mcp-server/tools/definitions/list-agencies.tool.js';
+import { listRoutesForAgency } from './mcp-server/tools/definitions/list-routes-for-agency.tool.js';
+import { searchRoutes } from './mcp-server/tools/definitions/search-routes.tool.js';
+import { searchStops } from './mcp-server/tools/definitions/search-stops.tool.js';
+import { initOneBusAwayService } from './services/onebusaway/onebusaway-service.js';
 
 await createApp({
-  tools: [echoTool, echoAppTool],
-  resources: [echoResource, echoAppUiResource],
-  prompts: [echoPrompt],
-  // instructions: 'Server-level orientation forwarded to the model on every initialize.\n' +
-  //   '- Use shortcut `X` for the most common case\n' +
-  //   '- Tools require auth via the `inventory:read` scope',
+  tools: [
+    listAgencies,
+    findStops,
+    findRoutes,
+    searchStops,
+    searchRoutes,
+    getStop,
+    getRoute,
+    listRoutesForAgency,
+    getArrivals,
+    getTrip,
+    getVehicles,
+    getScheduleForStop,
+    getScheduleForRoute,
+  ],
+  resources: [stopResource, routeResource],
+  prompts: [],
+  instructions:
+    'OneBusAway MCP server — real-time transit data for Puget Sound (King County Metro, Sound Transit, Pierce Transit, Community Transit, and more) and other OneBusAway instances.\n' +
+    '- Stop IDs use agency-prefixed format: {agencyId}_{localId} (e.g. "1_75403" for Metro Transit stop 75403)\n' +
+    '- To get arrivals: use onebusaway_find_stops or onebusaway_search_stops to resolve a location/name to a stopId, then call onebusaway_get_arrivals\n' +
+    '- For "where is the 44?": use onebusaway_search_routes to get routeId, then onebusaway_get_vehicles\n' +
+    '- OneBusAway does not include trip planning — direct users to Google Maps or Transit app for routing',
+  setup() {
+    initOneBusAwayService(getServerConfig());
+  },
 });
