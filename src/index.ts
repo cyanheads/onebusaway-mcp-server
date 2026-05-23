@@ -6,9 +6,10 @@
 
 import { createApp } from '@cyanheads/mcp-ts-core';
 import { getServerConfig } from './config/server-config.js';
-import { routeResource } from './mcp-server/resources/definitions/route.resource.js';
 // Resources
+import { routeResource } from './mcp-server/resources/definitions/route.resource.js';
 import { stopResource } from './mcp-server/resources/definitions/stop.resource.js';
+// Tools
 import { findRoutes } from './mcp-server/tools/definitions/find-routes.tool.js';
 import { findStops } from './mcp-server/tools/definitions/find-stops.tool.js';
 import { getArrivals } from './mcp-server/tools/definitions/get-arrivals.tool.js';
@@ -18,7 +19,6 @@ import { getScheduleForStop } from './mcp-server/tools/definitions/get-schedule-
 import { getStop } from './mcp-server/tools/definitions/get-stop.tool.js';
 import { getTrip } from './mcp-server/tools/definitions/get-trip.tool.js';
 import { getVehicles } from './mcp-server/tools/definitions/get-vehicles.tool.js';
-// Tools
 import { listAgencies } from './mcp-server/tools/definitions/list-agencies.tool.js';
 import { listRoutesForAgency } from './mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from './mcp-server/tools/definitions/search-routes.tool.js';

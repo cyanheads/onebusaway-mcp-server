@@ -54,7 +54,7 @@ export const findRoutes = tool('onebusaway_find_routes', {
         lat: input.lat,
         lon: input.lon,
         radius: input.radius,
-        ...(input.query && input.query.length > 0 && { query: input.query }),
+        ...(input.query && { query: input.query }),
       },
       ctx,
     );

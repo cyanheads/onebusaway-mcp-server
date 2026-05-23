@@ -79,7 +79,7 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
     const result = await getOneBusAwayService().getScheduleForRoute(
       {
         routeId: input.routeId,
-        ...(input.date && input.date.length > 0 && { date: input.date }),
+        ...(input.date && { date: input.date }),
       },
       ctx,
     );

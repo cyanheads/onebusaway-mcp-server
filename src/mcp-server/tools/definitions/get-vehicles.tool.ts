@@ -9,7 +9,7 @@ import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.j
 
 /** Format Unix milliseconds as HH:MM. */
 function fmtTime(ms: number): string {
-  if (!ms) return 'N/A';
+  if (!ms && ms !== 0) return 'N/A';
   const d = new Date(ms);
   const h = d.getHours().toString().padStart(2, '0');
   const m = d.getMinutes().toString().padStart(2, '0');
@@ -87,7 +87,7 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
     const vehicles = await getOneBusAwayService().getVehicles(
       {
         agencyId: input.agencyId,
-        ...(input.routeId && input.routeId.length > 0 && { routeId: input.routeId }),
+        ...(input.routeId && { routeId: input.routeId }),
       },
       ctx,
     );

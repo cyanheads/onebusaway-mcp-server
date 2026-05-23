@@ -2,8 +2,8 @@
   "manifest_version": "0.3",
   "name": "onebusaway-mcp-server",
   "version": "0.1.0",
-  "description": "",
-  "author": { "name": "" },
+  "description": "Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP. STDIO or Streamable HTTP.",
+  "author": { "name": "cyanheads" },
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -13,7 +13,8 @@
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_AUTH_MODE": "none",
-        "NODE_ENV": "production"
+        "NODE_ENV": "production",
+        "ONEBUSAWAY_API_KEY": "${ONEBUSAWAY_API_KEY}"
       }
     }
   },
@@ -22,5 +23,12 @@
   },
   "tools_generated": true,
   "prompts_generated": true,
-  "user_config": {}
+  "user_config": {
+    "ONEBUSAWAY_API_KEY": {
+      "type": "string",
+      "title": "OneBusAway API Key",
+      "description": "API key for the OneBusAway instance. Use 'TEST' for the Puget Sound instance (no registration required).",
+      "default": "TEST"
+    }
+  }
 }

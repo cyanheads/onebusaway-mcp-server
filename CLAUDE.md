@@ -11,38 +11,6 @@
 
 ---
 
-## First Session
-
-This project was just scaffolded with `bunx @cyanheads/mcp-ts-core init`. The framework, skills, and example definitions are in place — the domain isn't. The user's first messages will set direction; wait for them before proceeding.
-
-> **Remove this section** from CLAUDE.md / AGENTS.md after completing these steps. The skills and conventions below remain — this block is one-time onboarding only.
-
-1. **Get your bearings.** Take stock of the project tree, the skills in `skills/`, and the tools/MCP servers available. Light tool use is fine for context-building — you're mapping the territory, not committing yet.
-2. **Read the framework docs** — `node_modules/@cyanheads/mcp-ts-core/CLAUDE.md` (builders, Context, errors, exports, conventions)
-3. **Run the `setup` skill** — read `skills/setup/SKILL.md` and follow its checklist (project orientation, agent protocol file selection, echo definition cleanup, skill sync)
-4. **Design the server** — read `skills/design-mcp-server/SKILL.md` and work through it with the user to map the domain into tools, resources, and services before scaffolding
-
----
-
-## What's Next?
-
-When the user asks what's next or needs direction, suggest options based on the current project state. Common next steps:
-
-1. **Re-run the `setup` skill** — ensures CLAUDE.md, skills, structure, and metadata are populated and up to date with the current codebase
-2. **Run the `design-mcp-server` skill** — if the tool/resource surface hasn't been mapped yet, work through domain design
-3. **Add tools/resources/prompts** — scaffold new definitions using the `add-tool`, `add-app-tool`, `add-resource`, `add-prompt` skills
-4. **Add services** — scaffold domain service integrations using the `add-service` skill
-5. **Add tests** — scaffold tests for existing definitions using the `add-test` skill
-6. **Field-test definitions** — exercise tools/resources/prompts with real inputs using the `field-test` skill, get a report of issues and pain points
-7. **Run `devcheck`** — lint, format, typecheck, and security audit
-8. **Run the `security-pass` skill** — audit handlers for MCP-specific security gaps: output injection, scope blast radius, input sinks, tenant isolation
-9. **Run the `polish-docs-meta` skill** — finalize README, CHANGELOG, metadata, and agent protocol for shipping
-10. **Run the `maintenance` skill** — investigate changelogs, adopt upstream changes, and sync skills after `bun update --latest`
-
-Tailor suggestions to what's actually missing or stale — don't recite the full list every time.
-
----
-
 ## Core Rules
 
 - **Logic throws, framework catches.** Tool/resource handlers are pure — throw on failure, no `try/catch`. Plain `Error` is fine; the framework catches, classifies, and formats. Use error factories (`notFound()`, `validationError()`, etc.) when the error code matters.
@@ -59,35 +27,39 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 
 ```ts
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
-export const searchItems = tool('search_items', {
-  description: 'Search inventory items by query.',
+export const getStop = tool('onebusaway_get_stop', {
+  title: 'Get Stop Details',
+  description: 'Fetch details for a specific stop by ID.',
   annotations: { readOnlyHint: true },
   input: z.object({
-    query: z.string().describe('Search terms'),
-    limit: z.number().default(10).describe('Max results'),
+    stopId: z.string().min(1).describe('Agency-prefixed stop ID (e.g. "1_75403").'),
   }),
   output: z.object({
-    items: z.array(z.object({
-      id: z.string().describe('Item ID'),
-      name: z.string().describe('Item name'),
-    })).describe('Matching items'),
+    id: z.string().describe('Agency-prefixed stop ID.'),
+    name: z.string().describe('Stop name.'),
+    routeIds: z.array(z.string()).describe('IDs of routes that serve this stop.'),
   }),
-  auth: ['inventory:read'],
+  errors: [
+    {
+      reason: 'stop_not_found',
+      code: JsonRpcErrorCode.NotFound,
+      when: 'Stop ID does not exist on this instance.',
+      recovery: 'Search for the stop with onebusaway_find_stops or onebusaway_search_stops to get a valid ID.',
+    },
+  ],
 
   async handler(input, ctx) {
-    const items = await findItems(input.query, input.limit);
-    ctx.log.info('Search completed', { query: input.query, count: items.length });
-    return { items };
+    const stop = await getOneBusAwayService().getStop(input.stopId, ctx);
+    ctx.log.info('getStop completed', { stopId: input.stopId });
+    return stop;
   },
 
-  // format() populates content[] — the markdown twin of structuredContent.
-  // Different clients read different surfaces (Claude Code → structuredContent,
-  // Claude Desktop → content[]); both must carry the same data.
-  // Enforced at lint time: every field in `output` must appear in the rendered text.
   format: (result) => [{
     type: 'text',
-    text: result.items.map(i => `**${i.id}**: ${i.name}`).join('\n'),
+    text: `## ${result.name}\n**ID:** ${result.id}\n**Routes:** ${result.routeIds.join(', ')}`,
   }],
 });
 ```
@@ -96,60 +68,42 @@ export const searchItems = tool('search_items', {
 
 ```ts
 import { resource, z } from '@cyanheads/mcp-ts-core';
-import { notFound } from '@cyanheads/mcp-ts-core/errors';
+import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
-export const itemData = resource('inventory://{itemId}', {
-  description: 'Fetch an inventory item by ID.',
-  params: z.object({ itemId: z.string().describe('Item identifier') }),
-  auth: ['inventory:read'],
+export const stopResource = resource('onebusaway://stop/{stopId}', {
+  name: 'onebusaway-stop',
+  description: 'Stop metadata — name, coordinates, served routes, and wheelchair accessibility.',
+  mimeType: 'application/json',
+  params: z.object({ stopId: z.string().describe('Agency-prefixed stop ID.') }),
   async handler(params, ctx) {
-    const item = await ctx.state.get(`item:${params.itemId}`);
-    if (!item) throw notFound(`Item ${params.itemId} not found`, { itemId: params.itemId });
-    return item;
+    return getOneBusAwayService().getStop(params.stopId, ctx);
   },
-});
-```
-
-### Prompt
-
-```ts
-import { prompt, z } from '@cyanheads/mcp-ts-core';
-
-export const reviewCode = prompt('review_code', {
-  description: 'Review code for issues and best practices.',
-  args: z.object({
-    code: z.string().describe('Code to review'),
-    language: z.string().optional().describe('Programming language'),
-  }),
-  generate: (args) => [
-    { role: 'user', content: { type: 'text', text: `Review this ${args.language ?? ''} code:\n${args.code}` } },
-  ],
 });
 ```
 
 ### Server config
 
 ```ts
-// src/config/server-config.ts — lazy-parsed, separate from framework config
+// src/config/server-config.ts
 import { z } from '@cyanheads/mcp-ts-core';
 import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
 const ServerConfigSchema = z.object({
-  apiKey: z.string().describe('External API key'),
-  maxResults: z.coerce.number().default(100),
+  apiKey: z.string().default('TEST').describe('OneBusAway API key.'),
+  baseUrl: z.string().default('https://api.pugetsound.onebusaway.org').describe('Base URL.'),
 });
 
 let _config: z.infer<typeof ServerConfigSchema> | undefined;
 export function getServerConfig() {
   _config ??= parseEnvConfig(ServerConfigSchema, {
-    apiKey: 'MY_API_KEY',
-    maxResults: 'MY_MAX_RESULTS',
+    apiKey: 'ONEBUSAWAY_API_KEY',
+    baseUrl: 'ONEBUSAWAY_BASE_URL',
   });
   return _config;
 }
 ```
 
-`parseEnvConfig` maps Zod schema paths → env var names so errors name the variable (`MY_API_KEY`) not the path (`apiKey`). Throws `ConfigurationError`, which the framework prints as a clean startup banner.
+`parseEnvConfig` maps Zod schema paths → env var names so errors name the variable (`ONEBUSAWAY_API_KEY`) not the path (`apiKey`). Throws `ConfigurationError`, which the framework prints as a clean startup banner.
 
 ---
 
@@ -161,10 +115,7 @@ Handlers receive a unified `ctx` object. Key properties:
 |:---------|:------------|
 | `ctx.log` | Request-scoped logger — `.debug()`, `.info()`, `.notice()`, `.warning()`, `.error()`. Auto-correlates requestId, traceId, tenantId. |
 | `ctx.state` | Tenant-scoped KV — `.get(key)`, `.set(key, value, { ttl? })`, `.delete(key)`, `.list(prefix, { cursor, limit })`. Accepts any serializable value. |
-| `ctx.elicit` | Ask user for structured input. **Check for presence first:** `if (ctx.elicit) { ... }` |
-| `ctx.sample` | Request LLM completion from the client. **Check for presence first:** `if (ctx.sample) { ... }` |
 | `ctx.signal` | `AbortSignal` for cancellation. |
-| `ctx.progress` | Task progress (present when `task: true`) — `.setTotal(n)`, `.increment()`, `.update(message)`. |
 | `ctx.requestId` | Unique request ID. |
 | `ctx.tenantId` | Tenant ID from JWT or `'default'` for stdio. |
 
@@ -216,20 +167,32 @@ See framework CLAUDE.md and the `api-errors` skill for the full auto-classificat
 
 ```text
 src/
-  index.ts                              # createApp() entry point
+  index.ts                              # createApp() entry point — registers tools/resources, inits service
   config/
-    server-config.ts                    # Server-specific env vars (Zod schema)
+    server-config.ts                    # ONEBUSAWAY_API_KEY, ONEBUSAWAY_BASE_URL (Zod schema)
   services/
-    [domain]/
-      [domain]-service.ts               # Domain service (init/accessor pattern)
-      types.ts                          # Domain types
+    onebusaway/
+      onebusaway-service.ts             # OneBusAway service — wraps onebusaway-sdk, error classification
+      types.ts                          # Domain types (Stop, Route, Arrival, Vehicle, etc.)
   mcp-server/
     tools/definitions/
-      [tool-name].tool.ts               # Tool definitions
+      list-agencies.tool.ts             # onebusaway_list_agencies
+      find-stops.tool.ts                # onebusaway_find_stops
+      search-stops.tool.ts              # onebusaway_search_stops
+      get-stop.tool.ts                  # onebusaway_get_stop
+      find-routes.tool.ts               # onebusaway_find_routes
+      search-routes.tool.ts             # onebusaway_search_routes
+      get-route.tool.ts                 # onebusaway_get_route
+      list-routes-for-agency.tool.ts    # onebusaway_list_routes_for_agency
+      get-arrivals.tool.ts              # onebusaway_get_arrivals
+      get-trip.tool.ts                  # onebusaway_get_trip
+      get-vehicles.tool.ts              # onebusaway_get_vehicles
+      get-schedule-for-stop.tool.ts     # onebusaway_get_schedule_for_stop
+      get-schedule-for-route.tool.ts    # onebusaway_get_schedule_for_route
     resources/definitions/
-      [resource-name].resource.ts       # Resource definitions
-    prompts/definitions/
-      [prompt-name].prompt.ts           # Prompt definitions
+      stop.resource.ts                  # onebusaway://stop/{stopId}
+      route.resource.ts                 # onebusaway://route/{routeId}
+tests/                                  # Vitest tests — 77 tests covering all tools and resources
 ```
 
 ---

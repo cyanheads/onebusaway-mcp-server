@@ -87,7 +87,7 @@ export const getScheduleForStop = tool('onebusaway_get_schedule_for_stop', {
     const result = await getOneBusAwayService().getScheduleForStop(
       {
         stopId: input.stopId,
-        ...(input.date && input.date.length > 0 && { date: input.date }),
+        ...(input.date && { date: input.date }),
       },
       ctx,
     );

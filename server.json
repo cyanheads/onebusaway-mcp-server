@@ -1,7 +1,7 @@
 {
   "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
-  "name": "cyanheads/onebusaway-mcp-server",
-  "description": "MCP server for OneBusAway transit: stops, routes, arrivals, vehicle positions, and schedules.",
+  "name": "io.github.cyanheads/onebusaway-mcp-server",
+  "description": "Real-time transit stops, routes, arrivals, vehicle positions, and schedules via OneBusAway APIs.",
   "repository": {
     "url": "https://github.com/cyanheads/onebusaway-mcp-server",
     "source": "github"
@@ -12,7 +12,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "onebusaway-mcp-server",
-      "runtimeHint": "node",
+      "runtimeHint": "bun",
       "version": "0.1.0",
       "packageArguments": [
         {
@@ -25,6 +25,20 @@
         }
       ],
       "environmentVariables": [
+        {
+          "name": "ONEBUSAWAY_API_KEY",
+          "description": "OneBusAway API key. TEST works on the Puget Sound instance for development.",
+          "format": "string",
+          "isRequired": false,
+          "default": "TEST"
+        },
+        {
+          "name": "ONEBUSAWAY_BASE_URL",
+          "description": "Base URL for the OneBusAway instance. Defaults to Puget Sound.",
+          "format": "string",
+          "isRequired": false,
+          "default": "https://api.pugetsound.onebusaway.org"
+        },
         {
           "name": "MCP_LOG_LEVEL",
           "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
@@ -41,7 +55,7 @@
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "onebusaway-mcp-server",
-      "runtimeHint": "node",
+      "runtimeHint": "bun",
       "version": "0.1.0",
       "packageArguments": [
         {
@@ -54,6 +68,20 @@
         }
       ],
       "environmentVariables": [
+        {
+          "name": "ONEBUSAWAY_API_KEY",
+          "description": "OneBusAway API key. TEST works on the Puget Sound instance for development.",
+          "format": "string",
+          "isRequired": false,
+          "default": "TEST"
+        },
+        {
+          "name": "ONEBUSAWAY_BASE_URL",
+          "description": "Base URL for the OneBusAway instance. Defaults to Puget Sound.",
+          "format": "string",
+          "isRequired": false,
+          "default": "https://api.pugetsound.onebusaway.org"
+        },
         {
           "name": "MCP_HTTP_HOST",
           "description": "The hostname for the HTTP server.",

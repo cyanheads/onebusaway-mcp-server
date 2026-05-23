@@ -306,11 +306,11 @@ export class OneBusAwayService {
       const allSituationIds = new Set(arrivals.flatMap((a) => a.situationIds));
       const situations: Situation[] = [...allSituationIds]
         .map((id) => situationMap.get(id))
-        .filter(Boolean)
+        .filter((s): s is NonNullable<typeof s> => s != null)
         .map((s) => ({
-          id: s?.id ?? '',
-          summary: s?.summary?.value ?? '',
-          description: s?.description?.value ?? null,
+          id: s.id,
+          summary: s.summary?.value ?? '',
+          description: s.description?.value ?? null,
         }));
 
       return {
