@@ -252,6 +252,8 @@ export class OneBusAwayService {
         normalizeRoute(r, agencyMap.get(r.agencyId)?.name ?? r.agencyId),
       );
     } catch (err) {
+      // OBA returns 404 when no routes match — not a real error, just an empty result.
+      if (err instanceof OnebusawaySDK.NotFoundError) return [];
       classifyError(err, 'search/route', params.query);
     }
   }
@@ -491,7 +493,7 @@ export class OneBusAwayService {
         string,
         Array<{ stopId: string; arrivalTime: number; departureTime: number }>
       >();
-      for (const grouping of entry.stopTripGroupings) {
+      for (const grouping of entry.stopTripGroupings ?? []) {
         for (const twst of grouping.tripsWithStopTimes ?? []) {
           tripStopTimesMap.set(
             twst.tripId,
@@ -505,10 +507,11 @@ export class OneBusAwayService {
       }
 
       // Get route short name from the first trip or references
-      const firstTrip = entry.trips[0];
+      const trips_ = entry.trips ?? [];
+      const firstTrip = trips_[0];
       const routeShortName = firstTrip?.routeShortName ?? entry.routeId;
 
-      const trips: RouteScheduleTrip[] = entry.trips.map((t) => {
+      const trips: RouteScheduleTrip[] = trips_.map((t) => {
         const stopTimes = tripStopTimesMap.get(t.id) ?? [];
         return {
           tripId: t.id,

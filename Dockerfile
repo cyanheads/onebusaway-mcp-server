@@ -1,15 +1,12 @@
 # ==============================================================================
 # Build Stage
 #
-# Uses Node.js (not bun) so that tsx/tsc/tsc-alias can run under a real node
-# binary. The runtime (production) stage still uses bun.
+# This stage installs all dependencies (including dev), builds the TypeScript
+# source code into JavaScript, and prepares the production assets.
 # ==============================================================================
-FROM node:24-slim AS build
+FROM oven/bun:1.3 AS build
 
 WORKDIR /usr/src/app
-
-# Install bun for fast dependency resolution
-RUN npm install -g bun@1.3
 
 # Copy dependency manifests for optimized layer caching
 COPY package.json bun.lock ./
@@ -20,8 +17,8 @@ RUN bun install --frozen-lockfile
 # Copy the rest of the source code
 COPY . .
 
-# Build the application (npm run uses node, not bun, to exec tsx)
-RUN npm run build
+# Build the application
+RUN bun run build
 
 
 # ==============================================================================
@@ -42,8 +39,8 @@ ENV NODE_ENV=production
 # OCI image metadata (https://github.com/opencontainers/image-spec/blob/main/annotations.md)
 LABEL org.opencontainers.image.title="@cyanheads/onebusaway-mcp-server"
 LABEL org.opencontainers.image.description="Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP. STDIO or Streamable HTTP."
-LABEL org.opencontainers.image.source="https://github.com/cyanheads/onebusaway-mcp-server"
 LABEL org.opencontainers.image.licenses="Apache-2.0"
+LABEL org.opencontainers.image.source="https://github.com/cyanheads/onebusaway-mcp-server"
 
 # Copy dependency manifests
 COPY package.json bun.lock ./

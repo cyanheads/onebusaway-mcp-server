@@ -1,9 +1,15 @@
 {
   "manifest_version": "0.3",
   "name": "onebusaway-mcp-server",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP. STDIO or Streamable HTTP.",
   "author": { "name": "cyanheads" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/cyanheads/onebusaway-mcp-server"
+  },
+  "homepage": "https://github.com/cyanheads/onebusaway-mcp-server#readme",
+  "license": "Apache-2.0",
   "server": {
     "type": "node",
     "entry_point": "dist/index.js",
@@ -14,7 +20,7 @@
         "MCP_TRANSPORT_TYPE": "stdio",
         "MCP_AUTH_MODE": "none",
         "NODE_ENV": "production",
-        "ONEBUSAWAY_API_KEY": "${ONEBUSAWAY_API_KEY}"
+        "ONEBUSAWAY_API_KEY": "${user_config.ONEBUSAWAY_API_KEY}"
       }
     }
   },
