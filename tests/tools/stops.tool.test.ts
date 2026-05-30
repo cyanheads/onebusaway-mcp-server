@@ -4,7 +4,7 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
 import { getStop } from '@/mcp-server/tools/definitions/get-stop.tool.js';
@@ -49,6 +49,44 @@ describe('findStops', () => {
     expect(result.stops).toHaveLength(1);
     expect(result.stops[0]!.id).toBe('1_75403');
     expect(result.limitExceeded).toBe(false);
+  });
+
+  it('enriches with count and no notice for successful results', async () => {
+    const ctx = createMockContext();
+    mockService.findStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
+    const input = findStops.input.parse({ lat: 47.6586, lon: -122.3146 });
+    await findStops.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(1);
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with notice when no stops found', async () => {
+    const ctx = createMockContext();
+    mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
+    const input = findStops.input.parse({ lat: 47.6, lon: -122.3 });
+    await findStops.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(0);
+    expect(enrichment.notice).toMatch(/no stops/i);
+  });
+
+  it('enriches with notice when limitExceeded', async () => {
+    const ctx = createMockContext();
+    mockService.findStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: true });
+    const input = findStops.input.parse({ lat: 47.6, lon: -122.3 });
+    await findStops.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.notice).toMatch(/truncated/i);
+  });
+
+  it('echoes query in enrichment when filter provided', async () => {
+    const ctx = createMockContext();
+    mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
+    const input = findStops.input.parse({ lat: 47.6, lon: -122.3, query: '75403' });
+    await findStops.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.query).toBe('75403');
   });
 
   it('passes query filter to service when provided', async () => {
@@ -142,6 +180,27 @@ describe('searchStops', () => {
     const result = await searchStops.handler(input, ctx);
     expect(result.stops).toHaveLength(1);
     expect(result.stops[0]!.id).toBe('1_75403');
+  });
+
+  it('enriches with query and count', async () => {
+    const ctx = createMockContext();
+    mockService.searchStops.mockResolvedValue([STOP_FIXTURE]);
+    const input = searchStops.input.parse({ query: '75403' });
+    await searchStops.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.query).toBe('75403');
+    expect(enrichment.count).toBe(1);
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with notice when no matches', async () => {
+    const ctx = createMockContext();
+    mockService.searchStops.mockResolvedValue([]);
+    const input = searchStops.input.parse({ query: 'nowhere' });
+    await searchStops.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(0);
+    expect(enrichment.notice).toMatch(/no stops|no match/i);
   });
 
   it('returns empty list when no matches', async () => {

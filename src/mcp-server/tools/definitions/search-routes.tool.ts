@@ -55,12 +55,32 @@ export const searchRoutes = tool('onebusaway_search_routes', {
     },
   ],
 
+  // Agent-facing context: query echo and empty-result guidance.
+  enrichment: {
+    query: z.string().describe('Route name/number query sent to the API.'),
+    count: z.number().describe('Number of routes returned.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Guidance when no routes matched — e.g. try onebusaway_find_routes with coordinates, or onebusaway_list_routes_for_agency.',
+      ),
+  },
+
   async handler(input, ctx) {
     const routes = await getOneBusAwayService().searchRoutes(
       { query: input.query, maxCount: input.maxCount },
       ctx,
     );
     ctx.log.info('searchRoutes completed', { query: input.query, count: routes.length });
+
+    ctx.enrich({ query: input.query, count: routes.length });
+    if (routes.length === 0) {
+      ctx.enrich.notice(
+        `No routes matched "${input.query}". Try onebusaway_find_routes with lat/lon near the service area, or onebusaway_list_routes_for_agency with a known agency ID.`,
+      );
+    }
+
     return { routes };
   },
 

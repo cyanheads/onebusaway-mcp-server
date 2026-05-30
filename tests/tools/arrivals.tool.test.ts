@@ -3,7 +3,7 @@
  * @module tests/tools/arrivals.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
 
@@ -54,6 +54,28 @@ describe('getArrivals', () => {
     expect(result.stopId).toBe('1_75403');
     expect(result.arrivals).toHaveLength(1);
     expect(result.arrivals[0]!.routeShortName).toBe('44');
+  });
+
+  it('enriches with queriedStop, count, and window', async () => {
+    const ctx = createMockContext();
+    mockService.getArrivals.mockResolvedValue(ARRIVALS_RESULT);
+    const input = getArrivals.input.parse({ stopId: '1_75403' });
+    await getArrivals.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.queriedStop).toBe('1_75403');
+    expect(enrichment.count).toBe(1);
+    expect(enrichment.windowMinutes).toMatchObject({ before: 5, after: 35 });
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with notice when no arrivals', async () => {
+    const ctx = createMockContext();
+    mockService.getArrivals.mockResolvedValue({ ...ARRIVALS_RESULT, arrivals: [] });
+    const input = getArrivals.input.parse({ stopId: '1_75403' });
+    await getArrivals.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(0);
+    expect(enrichment.notice).toMatch(/no arrivals/i);
   });
 
   it('passes minutesBefore/minutesAfter to service', async () => {

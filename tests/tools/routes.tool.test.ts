@@ -4,7 +4,7 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { getRoute } from '@/mcp-server/tools/definitions/get-route.tool.js';
@@ -51,6 +51,35 @@ describe('findRoutes', () => {
     const result = await findRoutes.handler(input, ctx);
     expect(result.routes).toHaveLength(1);
     expect(result.routes[0]!.id).toBe('1_100259');
+  });
+
+  it('enriches with count and no notice for successful results', async () => {
+    const ctx = createMockContext();
+    mockService.findRoutes.mockResolvedValue([ROUTE_FIXTURE]);
+    const input = findRoutes.input.parse({ lat: 47.6586, lon: -122.3146 });
+    await findRoutes.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(1);
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with notice when no routes found', async () => {
+    const ctx = createMockContext();
+    mockService.findRoutes.mockResolvedValue([]);
+    const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3 });
+    await findRoutes.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(0);
+    expect(enrichment.notice).toMatch(/no routes/i);
+  });
+
+  it('echoes query in enrichment when filter provided', async () => {
+    const ctx = createMockContext();
+    mockService.findRoutes.mockResolvedValue([]);
+    const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, query: '44' });
+    await findRoutes.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.query).toBe('44');
   });
 
   it('passes query filter to service', async () => {
@@ -135,6 +164,16 @@ describe('listRoutesForAgency', () => {
     expect(result.routes[0]!.id).toBe('1_100259');
   });
 
+  it('enriches with agencyId and count', async () => {
+    const ctx = createMockContext();
+    mockService.listRoutesForAgency.mockResolvedValue([ROUTE_FIXTURE]);
+    const input = listRoutesForAgency.input.parse({ agencyId: '1' });
+    await listRoutesForAgency.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.agencyId).toBe('1');
+    expect(enrichment.count).toBe(1);
+  });
+
   it('propagates not-found for invalid agency', async () => {
     const ctx = createMockContext();
     mockService.listRoutesForAgency.mockRejectedValue(
@@ -175,6 +214,27 @@ describe('searchRoutes', () => {
     const input = searchRoutes.input.parse({ query: '44' });
     const result = await searchRoutes.handler(input, ctx);
     expect(result.routes).toHaveLength(1);
+  });
+
+  it('enriches with query and count', async () => {
+    const ctx = createMockContext();
+    mockService.searchRoutes.mockResolvedValue([ROUTE_FIXTURE]);
+    const input = searchRoutes.input.parse({ query: '44' });
+    await searchRoutes.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.query).toBe('44');
+    expect(enrichment.count).toBe(1);
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with notice when no match', async () => {
+    const ctx = createMockContext();
+    mockService.searchRoutes.mockResolvedValue([]);
+    const input = searchRoutes.input.parse({ query: 'zzz_no_route' });
+    await searchRoutes.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(0);
+    expect(enrichment.notice).toBeDefined();
   });
 
   it('returns empty list when no match', async () => {

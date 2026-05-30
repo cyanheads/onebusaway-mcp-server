@@ -75,6 +75,22 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
     },
   ],
 
+  // Agent-facing context: route echo, date, and trip count.
+  enrichment: {
+    queriedRoute: z.string().describe('Route ID queried.'),
+    date: z
+      .string()
+      .optional()
+      .describe('Date parameter used for the schedule request, if specified.'),
+    tripCount: z.number().describe('Number of trips for this route on this date.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Guidance when no trips were found — e.g. no service on weekends or holiday schedule in effect.',
+      ),
+  },
+
   async handler(input, ctx) {
     const result = await getOneBusAwayService().getScheduleForRoute(
       {
@@ -87,6 +103,18 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
       routeId: input.routeId,
       tripCount: result.trips.length,
     });
+
+    ctx.enrich({
+      queriedRoute: input.routeId,
+      ...(input.date && { date: input.date }),
+      tripCount: result.trips.length,
+    });
+    if (result.trips.length === 0) {
+      ctx.enrich.notice(
+        `No trips found for route ${input.routeId}${input.date ? ` on ${input.date}` : ' today'}. Service may not operate on this date.`,
+      );
+    }
+
     return result;
   },
 

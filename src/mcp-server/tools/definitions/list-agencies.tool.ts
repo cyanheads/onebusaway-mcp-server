@@ -40,9 +40,23 @@ export const listAgencies = tool('onebusaway_list_agencies', {
       .describe('All agencies served by this OneBusAway instance.'),
   }),
 
+  // Agent-facing context: count of agencies returned.
+  enrichment: {
+    count: z.number().describe('Number of transit agencies returned.'),
+    notice: z.string().optional().describe('Guidance when no agencies were returned.'),
+  },
+
   async handler(_input, ctx) {
     const agencies = await getOneBusAwayService().listAgencies(ctx);
     ctx.log.info('listAgencies completed', { count: agencies.length });
+
+    ctx.enrich({ count: agencies.length });
+    if (agencies.length === 0) {
+      ctx.enrich.notice(
+        'No agencies returned. The OneBusAway instance may be misconfigured or unreachable.',
+      );
+    }
+
     return { agencies };
   },
 

@@ -124,6 +124,30 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
     },
   ],
 
+  // Agent-facing context: arrival count, time window echo, and empty-result guidance.
+  enrichment: {
+    queriedStop: z.string().describe('Stop ID queried.'),
+    count: z.number().describe('Number of arrivals in the time window.'),
+    windowMinutes: z
+      .object({
+        before: z.number().describe('Minutes before current time included.'),
+        after: z.number().describe('Minutes after current time included.'),
+      })
+      .describe('Time window used for the arrivals query.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Guidance when no arrivals were found — e.g. try expanding the time window or check for service alerts.',
+      ),
+  },
+
+  enrichmentTrailer: {
+    windowMinutes: {
+      render: (w) => `**Window:** −${w.before} min / +${w.after} min`,
+    },
+  },
+
   async handler(input, ctx) {
     const result = await getOneBusAwayService().getArrivals(
       {
@@ -138,6 +162,18 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
       count: result.arrivals.length,
       situations: result.situations.length,
     });
+
+    ctx.enrich({
+      queriedStop: input.stopId,
+      count: result.arrivals.length,
+      windowMinutes: { before: input.minutesBefore, after: input.minutesAfter },
+    });
+    if (result.arrivals.length === 0) {
+      ctx.enrich.notice(
+        `No arrivals found at ${input.stopId} within the next ${input.minutesAfter} minutes. Try increasing minutesAfter, or check onebusaway_get_schedule_for_stop for scheduled service on this date.`,
+      );
+    }
+
     return result;
   },
 

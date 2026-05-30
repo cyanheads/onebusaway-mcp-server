@@ -48,6 +48,19 @@ export const findRoutes = tool('onebusaway_find_routes', {
       .describe('Routes found near the specified location.'),
   }),
 
+  // Agent-facing context: count, query echo, and empty-result guidance.
+  enrichment: {
+    count: z.number().describe('Number of routes returned.'),
+    query: z
+      .string()
+      .optional()
+      .describe('Route name/number filter applied to the search, if any.'),
+    notice: z
+      .string()
+      .optional()
+      .describe('Guidance when no routes matched — e.g. try a larger radius or different query.'),
+  },
+
   async handler(input, ctx) {
     const routes = await getOneBusAwayService().findRoutes(
       {
@@ -59,6 +72,16 @@ export const findRoutes = tool('onebusaway_find_routes', {
       ctx,
     );
     ctx.log.info('findRoutes completed', { count: routes.length });
+
+    ctx.enrich({ count: routes.length, ...(input.query && { query: input.query }) });
+    if (routes.length === 0) {
+      ctx.enrich.notice(
+        input.query
+          ? `No routes matching "${input.query}" found within ${input.radius}m. Try a larger radius or a different query.`
+          : `No routes found within ${input.radius}m. Try increasing the radius.`,
+      );
+    }
+
     return { routes };
   },
 

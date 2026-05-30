@@ -53,6 +53,18 @@ export const findStops = tool('onebusaway_find_stops', {
       .describe('True if more stops exist beyond the returned set; narrow the radius to see all.'),
   }),
 
+  // Agent-facing context: stop count, query echo, and guidance for empty or truncated results.
+  enrichment: {
+    count: z.number().describe('Number of stops returned.'),
+    query: z.string().optional().describe('Stop code filter applied to the search, if any.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Guidance when results are empty or truncated — e.g. how to narrow the radius or verify the stop code.',
+      ),
+  },
+
   async handler(input, ctx) {
     const result = await getOneBusAwayService().findStops(
       {
@@ -67,6 +79,20 @@ export const findStops = tool('onebusaway_find_stops', {
       count: result.stops.length,
       limitExceeded: result.limitExceeded,
     });
+
+    ctx.enrich({ count: result.stops.length, ...(input.query && { query: input.query }) });
+    if (result.stops.length === 0) {
+      ctx.enrich.notice(
+        input.query
+          ? `No stops found with code "${input.query}" within ${input.radius}m. Verify the code or increase the radius.`
+          : `No stops found within ${input.radius}m. Try a larger radius (max ~1600m) or a different location.`,
+      );
+    } else if (result.limitExceeded) {
+      ctx.enrich.notice(
+        'Results truncated — more stops exist within the radius. Narrow the radius to see all stops.',
+      );
+    }
+
     return result;
   },
 

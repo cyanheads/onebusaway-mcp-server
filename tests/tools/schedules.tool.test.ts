@@ -3,7 +3,7 @@
  * @module tests/tools/schedules.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getScheduleForRoute } from '@/mcp-server/tools/definitions/get-schedule-for-route.tool.js';
 import { getScheduleForStop } from '@/mcp-server/tools/definitions/get-schedule-for-stop.tool.js';
@@ -97,6 +97,36 @@ describe('getScheduleForStop', () => {
     expect(result.routes[0]!.directions[0]!.departures).toHaveLength(2);
   });
 
+  it('enriches with queriedStop and routeCount', async () => {
+    const ctx = createMockContext();
+    mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
+    const input = getScheduleForStop.input.parse({ stopId: '1_75403' });
+    await getScheduleForStop.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.queriedStop).toBe('1_75403');
+    expect(enrichment.routeCount).toBe(1);
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with notice when no routes found', async () => {
+    const ctx = createMockContext();
+    mockService.getScheduleForStop.mockResolvedValue({ ...STOP_SCHEDULE, routes: [] });
+    const input = getScheduleForStop.input.parse({ stopId: '1_75403' });
+    await getScheduleForStop.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.routeCount).toBe(0);
+    expect(enrichment.notice).toMatch(/no scheduled departures/i);
+  });
+
+  it('echoes date in enrichment when provided', async () => {
+    const ctx = createMockContext();
+    mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
+    const input = getScheduleForStop.input.parse({ stopId: '1_75403', date: '2026-05-23' });
+    await getScheduleForStop.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.date).toBe('2026-05-23');
+  });
+
   it('passes date when provided', async () => {
     const ctx = createMockContext();
     mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
@@ -153,6 +183,36 @@ describe('getScheduleForRoute', () => {
     expect(result.routeId).toBe('1_100259');
     expect(result.trips).toHaveLength(1);
     expect(result.trips[0]!.stops).toHaveLength(2);
+  });
+
+  it('enriches with queriedRoute and tripCount', async () => {
+    const ctx = createMockContext();
+    mockService.getScheduleForRoute.mockResolvedValue(ROUTE_SCHEDULE);
+    const input = getScheduleForRoute.input.parse({ routeId: '1_100259' });
+    await getScheduleForRoute.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.queriedRoute).toBe('1_100259');
+    expect(enrichment.tripCount).toBe(1);
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with notice when no trips found', async () => {
+    const ctx = createMockContext();
+    mockService.getScheduleForRoute.mockResolvedValue({ ...ROUTE_SCHEDULE, trips: [] });
+    const input = getScheduleForRoute.input.parse({ routeId: '1_100259' });
+    await getScheduleForRoute.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.tripCount).toBe(0);
+    expect(enrichment.notice).toMatch(/no trips/i);
+  });
+
+  it('echoes date in enrichment when provided', async () => {
+    const ctx = createMockContext();
+    mockService.getScheduleForRoute.mockResolvedValue(ROUTE_SCHEDULE);
+    const input = getScheduleForRoute.input.parse({ routeId: '1_100259', date: '2026-05-23' });
+    await getScheduleForRoute.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.date).toBe('2026-05-23');
   });
 
   it('passes date when provided', async () => {

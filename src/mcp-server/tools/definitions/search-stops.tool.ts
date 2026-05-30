@@ -46,12 +46,32 @@ export const searchStops = tool('onebusaway_search_stops', {
       .describe('Stops matching the search query.'),
   }),
 
+  // Agent-facing context: query echo and empty-result guidance.
+  enrichment: {
+    query: z.string().describe('Search query sent to the API.'),
+    count: z.number().describe('Number of stops returned.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Guidance when no stops matched — e.g. try a different name fragment or use onebusaway_find_stops with coordinates.',
+      ),
+  },
+
   async handler(input, ctx) {
     const stops = await getOneBusAwayService().searchStops(
       { query: input.query, maxCount: input.maxCount },
       ctx,
     );
     ctx.log.info('searchStops completed', { query: input.query, count: stops.length });
+
+    ctx.enrich({ query: input.query, count: stops.length });
+    if (stops.length === 0) {
+      ctx.enrich.notice(
+        `No stops matched "${input.query}". Try a different name fragment, a stop code, or use onebusaway_find_stops with lat/lon coordinates.`,
+      );
+    }
+
     return { stops };
   },
 

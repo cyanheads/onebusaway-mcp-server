@@ -3,7 +3,7 @@
  * @module tests/tools/vehicles.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getVehicles } from '@/mcp-server/tools/definitions/get-vehicles.tool.js';
 
@@ -45,6 +45,36 @@ describe('getVehicles', () => {
     const result = await getVehicles.handler(input, ctx);
     expect(result.vehicles).toHaveLength(1);
     expect(result.vehicles[0]!.vehicleId).toBe('bus_1234');
+  });
+
+  it('enriches with agencyId and count', async () => {
+    const ctx = createMockContext();
+    mockService.getVehicles.mockResolvedValue([VEHICLE_FIXTURE]);
+    const input = getVehicles.input.parse({ agencyId: '1' });
+    await getVehicles.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.agencyId).toBe('1');
+    expect(enrichment.count).toBe(1);
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with routeId when filter provided', async () => {
+    const ctx = createMockContext();
+    mockService.getVehicles.mockResolvedValue([VEHICLE_FIXTURE]);
+    const input = getVehicles.input.parse({ agencyId: '1', routeId: '1_100259' });
+    await getVehicles.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.routeId).toBe('1_100259');
+  });
+
+  it('enriches with notice when no vehicles found', async () => {
+    const ctx = createMockContext();
+    mockService.getVehicles.mockResolvedValue([]);
+    const input = getVehicles.input.parse({ agencyId: '1' });
+    await getVehicles.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(0);
+    expect(enrichment.notice).toMatch(/no active vehicles/i);
   });
 
   it('passes optional routeId to service', async () => {

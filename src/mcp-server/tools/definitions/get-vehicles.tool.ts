@@ -83,6 +83,19 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
     },
   ],
 
+  // Agent-facing context: agency/route echo, count, and empty-result guidance.
+  enrichment: {
+    agencyId: z.string().describe('Agency ID queried.'),
+    routeId: z.string().optional().describe('Route ID filter applied client-side, if any.'),
+    count: z.number().describe('Number of vehicles returned after any route filter.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Guidance when no vehicles were found — e.g. the route may not be currently active, or the agency may not have real-time data.',
+      ),
+  },
+
   async handler(input, ctx) {
     const vehicles = await getOneBusAwayService().getVehicles(
       {
@@ -92,6 +105,20 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
       ctx,
     );
     ctx.log.info('getVehicles completed', { agencyId: input.agencyId, count: vehicles.length });
+
+    ctx.enrich({
+      agencyId: input.agencyId,
+      ...(input.routeId && { routeId: input.routeId }),
+      count: vehicles.length,
+    });
+    if (vehicles.length === 0) {
+      ctx.enrich.notice(
+        input.routeId
+          ? `No active vehicles found on route ${input.routeId}. The route may not be currently running or may not have real-time data.`
+          : `No active vehicles found for agency ${input.agencyId}. Vehicles may not be running at this time.`,
+      );
+    }
+
     return { vehicles };
   },
 

@@ -3,7 +3,7 @@
  * @module tests/tools/agencies.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { listAgencies } from '@/mcp-server/tools/definitions/list-agencies.tool.js';
 
@@ -40,6 +40,36 @@ describe('listAgencies', () => {
     const result = await listAgencies.handler(input, ctx);
     expect(result.agencies).toHaveLength(1);
     expect(result.agencies[0]).toMatchObject({ id: '1', name: 'Metro Transit' });
+  });
+
+  it('enriches with count', async () => {
+    const ctx = createMockContext();
+    mockService.listAgencies.mockResolvedValue([
+      {
+        id: '1',
+        name: 'Metro Transit',
+        url: 'https://kingcounty.gov/metro',
+        phone: null,
+        timezone: 'America/Los_Angeles',
+        coverageCenter: { lat: 47.6062, lon: -122.3321 },
+        coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
+      },
+    ]);
+    const input = listAgencies.input.parse({});
+    await listAgencies.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(1);
+    expect(enrichment.notice).toBeUndefined();
+  });
+
+  it('enriches with notice when no agencies found', async () => {
+    const ctx = createMockContext();
+    mockService.listAgencies.mockResolvedValue([]);
+    const input = listAgencies.input.parse({});
+    await listAgencies.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(0);
+    expect(enrichment.notice).toMatch(/no agencies/i);
   });
 
   it('returns empty agencies when none found', async () => {

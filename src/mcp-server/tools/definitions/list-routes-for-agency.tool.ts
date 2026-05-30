@@ -52,12 +52,21 @@ export const listRoutesForAgency = tool('onebusaway_list_routes_for_agency', {
     },
   ],
 
+  // Agent-facing context: agency echo and route count.
+  enrichment: {
+    agencyId: z.string().describe('Agency ID queried.'),
+    count: z.number().describe('Number of routes returned for this agency.'),
+  },
+
   async handler(input, ctx) {
     const routes = await getOneBusAwayService().listRoutesForAgency(input.agencyId, ctx);
     ctx.log.info('listRoutesForAgency completed', {
       agencyId: input.agencyId,
       count: routes.length,
     });
+
+    ctx.enrich({ agencyId: input.agencyId, count: routes.length });
+
     return { routes };
   },
 
