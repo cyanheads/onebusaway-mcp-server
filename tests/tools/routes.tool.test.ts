@@ -183,6 +183,29 @@ describe('listRoutesForAgency', () => {
     await expect(listRoutesForAgency.handler(input, ctx)).rejects.toThrow();
   });
 
+  it('throws with data.reason "agency_not_found" from classifyError', async () => {
+    const ctx = createMockContext({ errors: listRoutesForAgency.errors });
+    mockService.listRoutesForAgency.mockRejectedValue(
+      new McpError(-32001, 'agency "bad" not found.', { id: 'bad', reason: 'agency_not_found' }),
+    );
+    const input = listRoutesForAgency.input.parse({ agencyId: 'bad' });
+    await expect(listRoutesForAgency.handler(input, ctx)).rejects.toMatchObject({
+      data: { reason: 'agency_not_found' },
+    });
+  });
+
+  it('enriches with notice when route list is empty (#14)', async () => {
+    const ctx = createMockContext();
+    mockService.listRoutesForAgency.mockResolvedValue([]);
+    const input = listRoutesForAgency.input.parse({ agencyId: 'empty_agency' });
+    await listRoutesForAgency.handler(input, ctx);
+    const { getEnrichment } = await import('@cyanheads/mcp-ts-core/testing');
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.count).toBe(0);
+    expect(enrichment.notice).toBeDefined();
+    expect(enrichment.notice).toMatch(/no routes|verify/i);
+  });
+
   it('formats route list with ID', () => {
     // listRoutesForAgency output drops agencyId/agencyName in the schema
     const routeRow = {

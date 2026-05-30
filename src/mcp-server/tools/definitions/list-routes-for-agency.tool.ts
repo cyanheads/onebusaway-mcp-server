@@ -52,10 +52,16 @@ export const listRoutesForAgency = tool('onebusaway_list_routes_for_agency', {
     },
   ],
 
-  // Agent-facing context: agency echo and route count.
+  // Agent-facing context: agency echo, route count, and empty-result guidance.
   enrichment: {
     agencyId: z.string().describe('Agency ID queried.'),
     count: z.number().describe('Number of routes returned for this agency.'),
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Guidance when no routes were found — verify the agency ID with onebusaway_list_agencies.',
+      ),
   },
 
   async handler(input, ctx) {
@@ -66,6 +72,11 @@ export const listRoutesForAgency = tool('onebusaway_list_routes_for_agency', {
     });
 
     ctx.enrich({ agencyId: input.agencyId, count: routes.length });
+    if (routes.length === 0) {
+      ctx.enrich.notice(
+        `No routes found for agency ${input.agencyId}. Verify the agency ID with onebusaway_list_agencies.`,
+      );
+    }
 
     return { routes };
   },
