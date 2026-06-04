@@ -321,6 +321,17 @@ bun run devcheck
 bun run test
 ```
 
+## Data
+
+Transit data is sourced from the [Puget Sound OneBusAway API](https://api.pugetsound.onebusaway.org), operated by Sound Transit and King County Metro. Use of this data is governed by the [Sound Transit Transit Data Terms of Use](https://www.soundtransit.org/help-contacts/business-information/open-transit-data-otd/transit-data-terms-use).
+
+Downstream users of this server's hosted endpoint receive data subject to those terms. Key obligations include:
+
+- **Clause 2** — Usage metrics are available on request.
+- **Clause 3** — Data is fetched live from the OneBusAway API and is not modified or cached beyond the request cycle.
+- **Clause 4** — You agree to pass through substantially similar terms to any users you provide this data to.
+- **Clause 7** — This server does not use Sound Transit trademarks in its name or branding.
+
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE) for details.
