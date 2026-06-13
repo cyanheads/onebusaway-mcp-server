@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.9](changelog/0.1.x/0.1.9.md) — 2026-06-12
+
+Adopt @cyanheads/mcp-ts-core ^0.10.6, set explicit server identity, add a Docker healthcheck and an MCPB bundle cleaner.
+
 ## [0.1.8](changelog/0.1.x/0.1.8.md) — 2026-06-04
 
 Add Sound Transit Transit Data Terms of Use compliance section to README.

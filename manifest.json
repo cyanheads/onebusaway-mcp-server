@@ -1,7 +1,7 @@
 {
   "manifest_version": "0.3",
   "name": "onebusaway-mcp-server",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP. STDIO or Streamable HTTP.",
   "author": { "name": "cyanheads" },
   "repository": {
