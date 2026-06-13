@@ -1,6 +1,6 @@
 {
   "name": "@cyanheads/onebusaway-mcp-server",
-  "version": "0.1.8",
+  "version": "0.1.9",
   "description": "Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads",
@@ -13,7 +13,7 @@
   "keywords": ["mcp", "mcp-server", "model-context-protocol", "transit", "onebusaway", "real-time", "puget-sound", "gtfs"],
   "mcpServers": "./.codex-plugin/mcp.json",
   "interface": {
-    "displayName": "@cyanheads/onebusaway-mcp-server",
+    "displayName": "onebusaway-mcp-server",
     "shortDescription": "Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP.",
     "longDescription": "",
     "developerName": "cyanheads",
