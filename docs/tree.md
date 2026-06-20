@@ -1,6 +1,6 @@
 # onebusaway-mcp-server - Directory Structure
 
-Generated on: 2026-06-13 04:08:43
+Generated on: 2026-06-20 12:18:00
 
 ```text
 onebusaway-mcp-server/
@@ -27,6 +27,7 @@ onebusaway-mcp-server/
 ├── scripts/
 │   ├── build-changelog.ts
 │   ├── build.ts
+│   ├── check-dependency-specifiers.ts
 │   ├── check-docs-sync.ts
 │   ├── check-framework-antipatterns.ts
 │   ├── check-skill-versions.ts

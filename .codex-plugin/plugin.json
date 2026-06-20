@@ -1,6 +1,6 @@
 {
   "name": "onebusaway-mcp-server",
-  "version": "0.1.9",
+  "version": "0.1.10",
   "description": "Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP. STDIO or Streamable HTTP.",
   "author": {
     "name": "cyanheads",
@@ -15,7 +15,7 @@
   "interface": {
     "displayName": "onebusaway-mcp-server",
     "shortDescription": "Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP.",
-    "longDescription": "",
+    "longDescription": "Real-time public transit data from OneBusAway instances — Puget Sound (King County Metro, Sound Transit, Pierce Transit, Community Transit) by default, or any OneBusAway-compatible REST API. Resolve a place or name to a stop with the find/search stop tools, then pull live predicted arrivals and departures, vehicle positions, full route and trip details, and stop or route schedules. Surface service alerts, walk trip-to-block relationships for a vehicle's full-day assignment, and list agencies and the routes they operate. Stop and route IDs use the agency-prefixed format ({agencyId}_{localId}, e.g. \"1_75403\"). Read-only; trip planning is out of scope.",
     "developerName": "cyanheads",
     "category": "",
     "capabilities": ["Read"],
