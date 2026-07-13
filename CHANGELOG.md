@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.11](changelog/0.1.x/0.1.11.md) — 2026-07-12
+
+Fixes rate-limit retry storms and null-response crashes misreported as ServiceUnavailable (#16, #22), adds not-found discovery hints (#17); adopts mcp-ts-core ^0.10.14 with supply-chain hardening — Socket install scanner, 3-day release-age hold, pinned Docker base, SECURITY.md.
+
 ## [0.1.10](changelog/0.1.x/0.1.10.md) — 2026-06-20
 
 Adopt @cyanheads/mcp-ts-core ^0.10.9 — fresh-scaffold devcheck guards, the check-dependency-specifiers gate, and plugin-manifest packaging checks; re-sync framework scripts and skills.

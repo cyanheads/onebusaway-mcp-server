@@ -1,6 +1,6 @@
 # onebusaway-mcp-server - Directory Structure
 
-Generated on: 2026-06-20 12:18:00
+Generated on: 2026-07-13 03:08:51
 
 ```text
 onebusaway-mcp-server/
@@ -11,10 +11,12 @@ onebusaway-mcp-server/
 │   ├── mcp.json
 │   └── plugin.json
 ├── .github/
-│   └── ISSUE_TEMPLATE/
-│       ├── bug_report.yml
-│       ├── config.yml
-│       └── feature_request.yml
+│   ├── ISSUE_TEMPLATE/
+│   │   ├── bug_report.yml
+│   │   ├── config.yml
+│   │   └── feature_request.yml
+│   ├── FUNDING.yml
+│   └── SECURITY.md
 ├── .vscode/
 │   ├── extensions.json
 │   └── settings.json
@@ -162,6 +164,9 @@ onebusaway-mcp-server/
 │   ├── prompts/
 │   ├── resources/
 │   │   └── onebusaway.resource.test.ts
+│   ├── services/
+│   │   └── onebusaway/
+│   │       └── onebusaway-service.test.ts
 │   └── tools/
 │       ├── agencies.tool.test.ts
 │       ├── alerts-and-blocks.tool.test.ts
@@ -177,6 +182,7 @@ onebusaway-mcp-server/
 │       └── vehicles.tool.test.ts
 ├── .dockerignore
 ├── .env.example
+├── .gitattributes
 ├── .gitignore
 ├── .mcpbignore
 ├── biome.json
