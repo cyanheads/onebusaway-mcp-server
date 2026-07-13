@@ -260,3 +260,219 @@ describe('guards pass valid data through (#22 regression)', () => {
     expect(result.routes[0]?.directions[0]?.departures[0]?.tripId).toBe('trip_abc');
   });
 });
+
+// ---- #15: getTrip surfaces blockId and resolves a non-empty routeShortName ----
+
+describe('getTrip data mapping (#15)', () => {
+  it('surfaces blockId and falls through an empty routeShortName to nullSafeShortName', async () => {
+    h.methods.tripDetails.retrieve.mockResolvedValue({
+      data: {
+        references: {
+          trips: [
+            {
+              id: '1_800571170',
+              routeId: '1_100210',
+              serviceId: 'wkdy',
+              blockId: '1_block42',
+              routeShortName: '', // empty upstream — must not win the fallback chain
+              tripHeadsign: 'Northgate',
+            },
+          ],
+          // shortName is empty; OBA carries the real label on nullSafeShortName
+          routes: [
+            { id: '1_100210', agencyId: '1', type: 3, shortName: '', nullSafeShortName: '36' },
+          ],
+          stops: [],
+        },
+        entry: {
+          tripId: '1_800571170',
+          status: { phase: 'in_progress', predicted: true },
+        },
+      },
+    });
+    const result = await getOneBusAwayService().getTrip({ tripId: '1_800571170' }, ctx);
+    expect(result.blockId).toBe('1_block42');
+    expect(result.routeShortName).toBe('36');
+  });
+});
+
+// ---- #20: getScheduleForRoute derives trips from stopTripGroupings ----
+
+describe('getScheduleForRoute data mapping (#20)', () => {
+  const groupings = [
+    {
+      directionId: '0',
+      stopIds: ['1_75403'],
+      tripHeadsigns: ['Downtown Seattle'],
+      tripIds: ['1_trip_a'],
+      tripsWithStopTimes: [
+        {
+          tripId: '1_trip_a',
+          stopTimes: [
+            {
+              stopId: '1_75403',
+              arrivalTime: 3600,
+              departureTime: 3660,
+              serviceId: 'wkdy',
+              arrivalEnabled: true,
+              departureEnabled: true,
+              tripId: '1_trip_a',
+            },
+          ],
+        },
+      ],
+    },
+  ];
+  const stops = [{ id: '1_75403', name: 'University Way NE & NE 42nd St' }];
+
+  it('derives trips from tripsWithStopTimes when entry.trips is empty', async () => {
+    h.methods.scheduleForRoute.retrieve.mockResolvedValue({
+      data: {
+        entry: {
+          routeId: '1_100259',
+          scheduleDate: 1752384000000,
+          serviceIds: ['wkdy'],
+          stops,
+          trips: [], // Puget Sound leaves this empty; the schedule lives in the groupings
+          stopTripGroupings: groupings,
+        },
+      },
+    });
+    const result = await getOneBusAwayService().getScheduleForRoute(
+      { routeId: '1_100259', date: '2026-07-13' },
+      ctx,
+    );
+    expect(result.trips).toHaveLength(1);
+    const trip = result.trips[0];
+    expect(trip?.tripId).toBe('1_trip_a');
+    expect(trip?.tripHeadsign).toBe('Downtown Seattle');
+    expect(trip?.serviceId).toBe('wkdy');
+    expect(trip?.stops[0]?.stopName).toBe('University Way NE & NE 42nd St');
+    expect(trip?.stops[0]?.departureTime).toBe(3660);
+  });
+
+  it('uses entry.trips when present, joining stop times from the groupings', async () => {
+    h.methods.scheduleForRoute.retrieve.mockResolvedValue({
+      data: {
+        entry: {
+          routeId: '1_100259',
+          scheduleDate: 1752384000000,
+          serviceIds: ['wkdy'],
+          stops,
+          trips: [
+            {
+              id: '1_trip_a',
+              routeId: '1_100259',
+              serviceId: 'wkdy',
+              routeShortName: '45',
+              tripHeadsign: 'Downtown Seattle',
+            },
+          ],
+          stopTripGroupings: groupings,
+        },
+      },
+    });
+    const result = await getOneBusAwayService().getScheduleForRoute({ routeId: '1_100259' }, ctx);
+    expect(result.routeShortName).toBe('45');
+    expect(result.trips).toHaveLength(1);
+    expect(result.trips[0]?.tripHeadsign).toBe('Downtown Seattle');
+    expect(result.trips[0]?.serviceId).toBe('wkdy');
+    expect(result.trips[0]?.stops[0]?.stopName).toBe('University Way NE & NE 42nd St');
+    expect(result.trips[0]?.stops[0]?.departureTime).toBe(3660);
+  });
+});
+
+// ---- #23: empty shortName falls through to nullSafeShortName at the remaining sites ----
+
+describe('route short name resolution skips empty shortName (#23)', () => {
+  it('normalizeRoute (getRoute): empty shortName falls through to nullSafeShortName', async () => {
+    h.methods.route.retrieve.mockResolvedValue({
+      data: {
+        references: { agencies: [{ id: '1', name: 'Metro Transit' }] },
+        // shortName is empty; OBA carries the real label on nullSafeShortName
+        entry: { id: '1_100210', agencyId: '1', type: 3, shortName: '', nullSafeShortName: '36' },
+      },
+    });
+    const result = await getOneBusAwayService().getRoute('1_100210', ctx);
+    expect(result.shortName).toBe('36');
+  });
+
+  it('getArrivals: empty ad.routeShortName and route shortName fall through to nullSafeShortName', async () => {
+    h.methods.arrivalAndDeparture.list.mockResolvedValue({
+      currentTime: 1748000000000,
+      data: {
+        references: {
+          routes: [{ id: '1_100210', shortName: '', nullSafeShortName: '36' }],
+          stops: [{ id: '1_75403', name: 'University Way NE & NE 42nd St' }],
+          situations: [],
+        },
+        entry: {
+          arrivalsAndDepartures: [
+            {
+              routeId: '1_100210',
+              routeShortName: '', // empty upstream — must not win the fallback chain
+              tripHeadsign: 'Northgate',
+              predicted: false,
+              predictedArrivalTime: 0,
+              scheduledArrivalTime: 1748000600000,
+              numberOfStopsAway: 2,
+              tripId: '1_trip_a',
+              situationIds: [],
+            },
+          ],
+        },
+      },
+    });
+    const result = await getOneBusAwayService().getArrivals({ stopId: '1_75403' }, ctx);
+    expect(result.arrivals[0]?.routeShortName).toBe('36');
+  });
+
+  it('getVehicles: empty route shortName falls through to nullSafeShortName', async () => {
+    h.methods.vehiclesForAgency.list.mockResolvedValue({
+      data: {
+        references: {
+          trips: [{ id: '1_trip_a', routeId: '1_100210' }],
+          routes: [{ id: '1_100210', shortName: '', nullSafeShortName: '36' }],
+        },
+        list: [
+          {
+            vehicleId: '1_v1',
+            tripId: '1_trip_a',
+            location: { lat: 47.6, lon: -122.3 },
+            lastUpdateTime: 1748000000000,
+            tripStatus: { phase: 'in_progress' },
+          },
+        ],
+      },
+    });
+    const result = await getOneBusAwayService().getVehicles({ agencyId: '1' }, ctx);
+    expect(result[0]?.routeShortName).toBe('36');
+  });
+
+  it('getScheduleForStop: empty route shortName falls through to nullSafeShortName', async () => {
+    h.methods.scheduleForStop.retrieve.mockResolvedValue({
+      data: {
+        references: {
+          routes: [{ id: '1_100210', shortName: '', nullSafeShortName: '36' }],
+          stops: [{ id: '1_75403', name: 'University Way NE & NE 42nd St' }],
+        },
+        entry: {
+          date: 1748000000000,
+          stopRouteSchedules: [
+            {
+              routeId: '1_100210',
+              stopRouteDirectionSchedules: [
+                {
+                  tripHeadsign: 'Northgate',
+                  scheduleStopTimes: [{ departureTime: 1748000600000, tripId: '1_trip_a' }],
+                },
+              ],
+            },
+          ],
+        },
+      },
+    });
+    const result = await getOneBusAwayService().getScheduleForStop({ stopId: '1_75403' }, ctx);
+    expect(result.routes[0]?.routeShortName).toBe('36');
+  });
+});

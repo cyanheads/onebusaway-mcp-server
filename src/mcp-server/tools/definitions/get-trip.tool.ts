@@ -50,6 +50,12 @@ export const getTrip = tool('onebusaway_get_trip', {
     tripId: z.string().describe('The queried trip ID.'),
     routeShortName: z.string().describe('Route short name (e.g. "44").'),
     tripHeadsign: z.string().describe('Destination sign text.'),
+    blockId: z
+      .string()
+      .nullable()
+      .describe(
+        'Block ID grouping this trip with the others the same vehicle runs back-to-back. Pass to onebusaway_get_block for the full block schedule. Null when the trip has no block.',
+      ),
     status: z
       .object({
         phase: z
@@ -136,6 +142,7 @@ export const getTrip = tool('onebusaway_get_trip', {
       `**Schedule deviation:** ${devLabel} (${s.scheduleDeviation}s)`,
     ];
 
+    if (result.blockId) lines.push(`**Block:** ${result.blockId}`);
     if (s.vehicleId) lines.push(`**Vehicle:** ${s.vehicleId}`);
     if (s.position) {
       lines.push(`**Position:** ${s.position.lat.toFixed(5)}, ${s.position.lon.toFixed(5)}`);

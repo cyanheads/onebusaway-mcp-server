@@ -164,6 +164,7 @@ export interface TripStatus {
 }
 
 export interface TripResult {
+  blockId: string | null;
   routeShortName: string;
   schedule: TripScheduleStop[] | null;
   situations: string[];

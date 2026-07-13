@@ -15,6 +15,7 @@ import type {
   BlockResult,
   Route,
   RouteScheduleResult,
+  RouteScheduleStopTime,
   RouteScheduleTrip,
   Situation,
   SituationDetail,
@@ -72,7 +73,7 @@ function normalizeRoute(
 ): Route {
   return {
     id: raw.id,
-    shortName: raw.shortName ?? raw.nullSafeShortName ?? '',
+    shortName: firstNonEmpty(raw.shortName, raw.nullSafeShortName),
     longName: raw.longName ?? '',
     description: raw.description ?? '',
     agencyId: raw.agencyId,
@@ -81,6 +82,19 @@ function normalizeRoute(
     color: raw.color ?? null,
     url: raw.url ?? null,
   };
+}
+
+/**
+ * First non-empty string among the candidates, or `''` if none qualifies. OBA
+ * populates `nullSafeShortName` precisely when `shortName` is the empty string,
+ * so a plain `??` chain wrongly stops at `''` and never reaches the fallback —
+ * this skips empty strings the way `??` skips null/undefined.
+ */
+function firstNonEmpty(...values: Array<string | null | undefined>): string {
+  for (const v of values) {
+    if (v) return v;
+  }
+  return '';
 }
 
 /**
@@ -341,8 +355,12 @@ export class OneBusAwayService {
         const predicted = ad.predicted ?? false;
 
         return {
-          routeShortName:
-            ad.routeShortName ?? routeRef?.shortName ?? routeRef?.nullSafeShortName ?? ad.routeId,
+          routeShortName: firstNonEmpty(
+            ad.routeShortName,
+            routeRef?.shortName,
+            routeRef?.nullSafeShortName,
+            ad.routeId,
+          ),
           tripHeadsign: ad.tripHeadsign,
           predicted,
           predictedArrivalTime:
@@ -423,9 +441,13 @@ export class OneBusAwayService {
 
       return {
         tripId: params.tripId,
-        routeShortName:
-          tripRef?.routeShortName ?? routeRef?.shortName ?? routeRef?.nullSafeShortName ?? '',
+        routeShortName: firstNonEmpty(
+          tripRef?.routeShortName,
+          routeRef?.shortName,
+          routeRef?.nullSafeShortName,
+        ),
         tripHeadsign: tripRef?.tripHeadsign ?? '',
+        blockId: tripRef?.blockId || null,
         status: {
           phase: status?.phase ?? 'unknown',
           predicted: status?.predicted ?? false,
@@ -478,7 +500,7 @@ export class OneBusAwayService {
             vehicleId: v.vehicleId,
             tripId: v.tripId || null,
             routeId,
-            routeShortName: routeRef?.shortName ?? routeRef?.nullSafeShortName ?? null,
+            routeShortName: firstNonEmpty(routeRef?.shortName, routeRef?.nullSafeShortName) || null,
             tripHeadsign: tripRef?.tripHeadsign ?? null,
             position: { lat: v.location.lat ?? 0, lon: v.location.lon ?? 0 },
             lastUpdateTime: v.lastUpdateTime,
@@ -526,7 +548,11 @@ export class OneBusAwayService {
         const routeRef = routeMap.get(srs.routeId);
         return {
           routeId: srs.routeId,
-          routeShortName: routeRef?.shortName ?? routeRef?.nullSafeShortName ?? srs.routeId,
+          routeShortName: firstNonEmpty(
+            routeRef?.shortName,
+            routeRef?.nullSafeShortName,
+            srs.routeId,
+          ),
           directions: srs.stopRouteDirectionSchedules.map((srds) => ({
             tripHeadsign: srds.tripHeadsign,
             departures: srds.scheduleStopTimes.map((sst) => ({
@@ -564,44 +590,55 @@ export class OneBusAwayService {
         );
       const entry = resp.data.entry;
       const stopMap = new Map((entry.stops ?? []).map((s) => [s.id, s]));
+      const groupings = entry.stopTripGroupings ?? [];
 
-      // Build a map from tripId → stop times from stopTripGroupings
-      const tripStopTimesMap = new Map<
-        string,
-        Array<{ stopId: string; arrivalTime: number; departureTime: number }>
-      >();
-      for (const grouping of entry.stopTripGroupings ?? []) {
-        for (const twst of grouping.tripsWithStopTimes ?? []) {
-          tripStopTimesMap.set(
-            twst.tripId,
-            twst.stopTimes.map((st) => ({
-              stopId: st.stopId,
-              arrivalTime: st.arrivalTime,
-              departureTime: st.departureTime,
-            })),
-          );
+      /** Resolve raw stop times to the domain shape, naming stops from the entry's stop refs. */
+      const toStops = (
+        stopTimes: Array<{ stopId: string; arrivalTime: number; departureTime: number }>,
+      ): RouteScheduleStopTime[] =>
+        stopTimes.map((st) => ({
+          stopId: st.stopId,
+          stopName: stopMap.get(st.stopId)?.name ?? st.stopId,
+          arrivalTime: st.arrivalTime,
+          departureTime: st.departureTime,
+        }));
+
+      const entryTrips = entry.trips ?? [];
+      let trips: RouteScheduleTrip[];
+      if (entryTrips.length > 0) {
+        // entry.trips carries per-trip metadata; the groupings carry each trip's stop times.
+        const stopTimesByTrip = new Map<
+          string,
+          Array<{ stopId: string; arrivalTime: number; departureTime: number }>
+        >();
+        for (const grouping of groupings) {
+          for (const twst of grouping.tripsWithStopTimes ?? []) {
+            stopTimesByTrip.set(twst.tripId, twst.stopTimes);
+          }
         }
-      }
-
-      // Get route short name from the first trip or references
-      const trips_ = entry.trips ?? [];
-      const firstTrip = trips_[0];
-      const routeShortName = firstTrip?.routeShortName ?? entry.routeId;
-
-      const trips: RouteScheduleTrip[] = trips_.map((t) => {
-        const stopTimes = tripStopTimesMap.get(t.id) ?? [];
-        return {
+        trips = entryTrips.map((t) => ({
           tripId: t.id,
           tripHeadsign: t.tripHeadsign ?? '',
           serviceId: t.serviceId,
-          stops: stopTimes.map((st) => ({
-            stopId: st.stopId,
-            stopName: stopMap.get(st.stopId)?.name ?? st.stopId,
-            arrivalTime: st.arrivalTime,
-            departureTime: st.departureTime,
-          })),
-        };
-      });
+          stops: toStops(stopTimesByTrip.get(t.id) ?? []),
+        }));
+      } else {
+        // Puget Sound returns an empty entry.trips; the operating trips live in the groupings.
+        // tripsWithStopTimes carries no per-trip headsign/serviceId — derive the headsign from
+        // the grouping's direction headsign and the serviceId from the trip's own stop times.
+        trips = groupings.flatMap((grouping) => {
+          const tripHeadsign = grouping.tripHeadsigns?.[0] ?? '';
+          return (grouping.tripsWithStopTimes ?? []).map((twst) => ({
+            tripId: twst.tripId,
+            tripHeadsign,
+            serviceId: twst.stopTimes[0]?.serviceId ?? '',
+            stops: toStops(twst.stopTimes),
+          }));
+        });
+      }
+
+      // Route short name is only carried on entry.trips; fall back to the route ID when it's empty.
+      const routeShortName = entryTrips[0]?.routeShortName ?? entry.routeId;
 
       return {
         routeId: entry.routeId,
