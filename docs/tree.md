@@ -1,6 +1,6 @@
 # onebusaway-mcp-server - Directory Structure
 
-Generated on: 2026-07-13 03:08:51
+Generated on: 2026-07-13 06:22:46
 
 ```text
 onebusaway-mcp-server/
@@ -139,22 +139,23 @@ onebusaway-mcp-server/
 │   │   │       ├── route.resource.ts
 │   │   │       └── stop.resource.ts
 │   │   └── tools/
-│   │       └── definitions/
-│   │           ├── find-routes.tool.ts
-│   │           ├── find-stops.tool.ts
-│   │           ├── get-alert.tool.ts
-│   │           ├── get-arrivals.tool.ts
-│   │           ├── get-block.tool.ts
-│   │           ├── get-route.tool.ts
-│   │           ├── get-schedule-for-route.tool.ts
-│   │           ├── get-schedule-for-stop.tool.ts
-│   │           ├── get-stop.tool.ts
-│   │           ├── get-trip.tool.ts
-│   │           ├── get-vehicles.tool.ts
-│   │           ├── list-agencies.tool.ts
-│   │           ├── list-routes-for-agency.tool.ts
-│   │           ├── search-routes.tool.ts
-│   │           └── search-stops.tool.ts
+│   │       ├── definitions/
+│   │       │   ├── find-routes.tool.ts
+│   │       │   ├── find-stops.tool.ts
+│   │       │   ├── get-alert.tool.ts
+│   │       │   ├── get-arrivals.tool.ts
+│   │       │   ├── get-block.tool.ts
+│   │       │   ├── get-route.tool.ts
+│   │       │   ├── get-schedule-for-route.tool.ts
+│   │       │   ├── get-schedule-for-stop.tool.ts
+│   │       │   ├── get-stop.tool.ts
+│   │       │   ├── get-trip.tool.ts
+│   │       │   ├── get-vehicles.tool.ts
+│   │       │   ├── list-agencies.tool.ts
+│   │       │   ├── list-routes-for-agency.tool.ts
+│   │       │   ├── search-routes.tool.ts
+│   │       │   └── search-stops.tool.ts
+│   │       └── format-helpers.ts
 │   ├── services/
 │   │   └── onebusaway/
 │   │       ├── onebusaway-service.ts
@@ -173,6 +174,7 @@ onebusaway-mcp-server/
 │       ├── arrivals.tool.test.ts
 │       ├── edge-cases.tool.test.ts
 │       ├── error-contracts.tool.test.ts
+│       ├── format-parity.helper.ts
 │       ├── input-validation.tool.test.ts
 │       ├── routes.tool.test.ts
 │       ├── schedules.tool.test.ts
