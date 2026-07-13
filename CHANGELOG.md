@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.12](changelog/0.1.x/0.1.12.md) — 2026-07-12
+
+Fixes get_trip dropping blockId and returning an empty routeShortName (#15), get_schedule_for_route returning zero trips on Puget Sound (#20), and the same empty-shortName fallback bug in four more call sites (#23).
+
 ## [0.1.11](changelog/0.1.x/0.1.11.md) — 2026-07-12
 
 Fixes rate-limit retry storms and null-response crashes misreported as ServiceUnavailable (#16, #22), adds not-found discovery hints (#17); adopts mcp-ts-core ^0.10.14 with supply-chain hardening — Socket install scanner, 3-day release-age hold, pinned Docker base, SECURITY.md.
