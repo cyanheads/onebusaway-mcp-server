@@ -5,6 +5,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const listRoutesForAgency = tool('onebusaway_list_routes_for_agency', {
@@ -42,6 +43,11 @@ export const listRoutesForAgency = tool('onebusaway_list_routes_for_agency', {
           .describe('A transit route operated by this agency.'),
       )
       .describe('All routes operated by this agency.'),
+    limitExceeded: z
+      .boolean()
+      .describe(
+        'True if the upstream capped the route list — some routes were omitted. This endpoint has no pagination to retrieve them.',
+      ),
   }),
   errors: [
     {
@@ -65,33 +71,44 @@ export const listRoutesForAgency = tool('onebusaway_list_routes_for_agency', {
   },
 
   async handler(input, ctx) {
-    const routes = await getOneBusAwayService().listRoutesForAgency(input.agencyId, ctx);
+    const result = await getOneBusAwayService().listRoutesForAgency(input.agencyId, ctx);
     ctx.log.info('listRoutesForAgency completed', {
       agencyId: input.agencyId,
-      count: routes.length,
+      count: result.routes.length,
+      limitExceeded: result.limitExceeded,
     });
 
-    ctx.enrich({ agencyId: input.agencyId, count: routes.length });
-    if (routes.length === 0) {
+    ctx.enrich({ agencyId: input.agencyId, count: result.routes.length });
+    if (result.routes.length === 0) {
       ctx.enrich.notice(
         `No routes found for agency ${input.agencyId}. Verify the agency ID with onebusaway_list_agencies.`,
       );
+    } else if (result.limitExceeded) {
+      ctx.enrich.notice(
+        'Results truncated upstream — some routes for this agency were omitted; this endpoint has no pagination to retrieve the rest.',
+      );
     }
 
-    return { routes };
+    return { routes: result.routes, limitExceeded: result.limitExceeded };
   },
 
   format: (result) => {
-    if (result.routes.length === 0) {
-      return [{ type: 'text', text: 'No routes found for this agency.' }];
+    const lines: string[] = [
+      `**Routes:** ${result.routes.length} | **Limit exceeded:** ${result.limitExceeded}`,
+    ];
+    if (result.limitExceeded) {
+      lines.push('> Results truncated upstream — some routes omitted (no pagination available).');
     }
-    const lines: string[] = [`**Routes:** ${result.routes.length}`];
+    if (result.routes.length === 0) {
+      lines.push('No routes found for this agency.');
+      return [{ type: 'text', text: lines.join('\n') }];
+    }
     for (const r of result.routes) {
       lines.push(`\n## ${r.shortName}${r.longName ? ` — ${r.longName}` : ''}`);
       lines.push(`**ID:** ${r.id} | **Type:** ${r.type}`);
-      if (r.description) lines.push(`**Description:** ${r.description}`);
-      if (r.color) lines.push(`**Color:** #${r.color}`);
-      if (r.url) lines.push(`**Schedule URL:** ${r.url}`);
+      lines.push(`**Description:** ${orNone(r.description)}`);
+      lines.push(`**Color:** ${orNone(r.color, (c) => `#${c}`)}`);
+      lines.push(`**Schedule URL:** ${orNone(r.url)}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },

@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const findRoutes = tool('onebusaway_find_routes', {
@@ -12,9 +13,30 @@ export const findRoutes = tool('onebusaway_find_routes', {
     'Find transit routes near a location, optionally filtered by name or number. Returns routes with IDs, short names, and descriptions. Use routeId values to fetch schedules, vehicles, or stop sequences.',
   annotations: { readOnlyHint: true },
   input: z.object({
-    lat: z.number().describe('Latitude of the search center.'),
-    lon: z.number().describe('Longitude of the search center.'),
-    radius: z.number().default(500).describe('Search radius in meters. Defaults to 500m.'),
+    lat: z.number().min(-90).max(90).describe('Latitude of the search center, in [-90, 90].'),
+    lon: z.number().min(-180).max(180).describe('Longitude of the search center, in [-180, 180].'),
+    radius: z
+      .number()
+      .positive()
+      .max(1600)
+      .default(500)
+      .describe(
+        'Search radius in meters. Must be positive; capped at 1600m. Defaults to 500m. Ignored when latSpan and lonSpan are both set.',
+      ),
+    latSpan: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        'Optional bounding-box height in degrees, as an alternative to radius. Takes effect only when lonSpan is also set, in which case radius is ignored.',
+      ),
+    lonSpan: z
+      .number()
+      .positive()
+      .optional()
+      .describe(
+        'Optional bounding-box width in degrees, as an alternative to radius. Takes effect only when latSpan is also set, in which case radius is ignored.',
+      ),
     query: z
       .string()
       .optional()
@@ -46,6 +68,11 @@ export const findRoutes = tool('onebusaway_find_routes', {
           .describe('A transit route with agency and type information.'),
       )
       .describe('Routes found near the specified location.'),
+    limitExceeded: z
+      .boolean()
+      .describe(
+        'True if more routes exist beyond the returned set; narrow the radius or set latSpan/lonSpan to see all.',
+      ),
   }),
 
   // Agent-facing context: count, query echo, and empty-result guidance.
@@ -62,41 +89,58 @@ export const findRoutes = tool('onebusaway_find_routes', {
   },
 
   async handler(input, ctx) {
-    const routes = await getOneBusAwayService().findRoutes(
+    // latSpan/lonSpan define a bounding box as an alternative to radius; when both are
+    // set, send the box and omit radius so it (not the default radius) drives the search.
+    const result = await getOneBusAwayService().findRoutes(
       {
         lat: input.lat,
         lon: input.lon,
-        radius: input.radius,
+        ...(input.latSpan != null && input.lonSpan != null
+          ? { latSpan: input.latSpan, lonSpan: input.lonSpan }
+          : { radius: input.radius }),
         ...(input.query && { query: input.query }),
       },
       ctx,
     );
-    ctx.log.info('findRoutes completed', { count: routes.length });
+    ctx.log.info('findRoutes completed', {
+      count: result.routes.length,
+      limitExceeded: result.limitExceeded,
+    });
 
-    ctx.enrich({ count: routes.length, ...(input.query && { query: input.query }) });
-    if (routes.length === 0) {
+    ctx.enrich({ count: result.routes.length, ...(input.query && { query: input.query }) });
+    if (result.routes.length === 0) {
       ctx.enrich.notice(
         input.query
-          ? `No routes matching "${input.query}" found within ${input.radius}m. Try a larger radius or a different query.`
-          : `No routes found within ${input.radius}m. Try increasing the radius.`,
+          ? `No routes matching "${input.query}" found nearby. Try a larger radius or a different query.`
+          : 'No routes found nearby. Try increasing the radius.',
+      );
+    } else if (result.limitExceeded) {
+      ctx.enrich.notice(
+        'Results truncated — more routes exist nearby. Narrow the radius (or set latSpan/lonSpan) to see all routes.',
       );
     }
 
-    return { routes };
+    return { routes: result.routes, limitExceeded: result.limitExceeded };
   },
 
   format: (result) => {
-    if (result.routes.length === 0) {
-      return [{ type: 'text', text: 'No routes found near this location.' }];
+    const lines: string[] = [
+      `**Routes found:** ${result.routes.length} | **Limit exceeded:** ${result.limitExceeded}`,
+    ];
+    if (result.limitExceeded) {
+      lines.push('> Results truncated — narrow the radius to see all routes.');
     }
-    const lines: string[] = [`**Routes found:** ${result.routes.length}`];
+    if (result.routes.length === 0) {
+      lines.push('No routes found near this location.');
+      return [{ type: 'text', text: lines.join('\n') }];
+    }
     for (const r of result.routes) {
       lines.push(`\n## ${r.shortName}${r.longName ? ` — ${r.longName}` : ''}`);
       lines.push(`**ID:** ${r.id} | **Agency:** ${r.agencyName} (${r.agencyId})`);
-      if (r.description) lines.push(`**Description:** ${r.description}`);
+      lines.push(`**Description:** ${orNone(r.description)}`);
       lines.push(`**Type:** ${r.type}`);
-      if (r.color) lines.push(`**Color:** #${r.color}`);
-      if (r.url) lines.push(`**Schedule URL:** ${r.url}`);
+      lines.push(`**Color:** ${orNone(r.color, (c) => `#${c}`)}`);
+      lines.push(`**Schedule URL:** ${orNone(r.url)}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },

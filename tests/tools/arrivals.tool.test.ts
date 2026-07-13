@@ -6,6 +6,7 @@
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
+import { expectContentParity } from './format-parity.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -35,7 +36,7 @@ const ARRIVALS_RESULT = {
       scheduledArrivalTime: NOW_MS + 120_000,
       scheduleDeviation: 60,
       vehicleId: 'bus_1234',
-      vehiclePosition: { lat: 47.659, lon: -122.315 },
+      vehiclePosition: { lat: 47.6591234, lon: -122.3151234 },
       stopsAway: 2,
       tripId: 'trip_abc',
       routeId: '1_100259',
@@ -100,7 +101,7 @@ describe('getArrivals', () => {
     await expect(getArrivals.handler(input, ctx)).rejects.toThrow();
   });
 
-  it('formats arrivals with trip ID, route ID, and schedule deviation', () => {
+  it('formats arrivals with trip ID, route ID, exact position, and parity', () => {
     const blocks = getArrivals.format!(ARRIVALS_RESULT);
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('1_75403');
@@ -109,6 +110,10 @@ describe('getArrivals', () => {
     expect(text).toContain('1_100259');
     // schedule deviation in seconds must appear
     expect(text).toContain('60');
+    // vehicle position at exact precision, not toFixed(5)-rounded
+    expect(text).toContain('47.6591234');
+    expect(text).toContain('-122.3151234');
+    expectContentParity(blocks, ARRIVALS_RESULT);
   });
 
   it('formats empty arrivals', () => {
@@ -144,5 +149,10 @@ describe('getArrivals', () => {
     };
     const text = (getArrivals.format!(scheduledOnly)[0] as { text: string }).text;
     expect(text).toContain('scheduled');
+    // Absent vehicle data is explicit, so a content-only client sees "no vehicle".
+    expect(text).toContain('**Vehicle:** none');
+    expect(text).toContain('**Vehicle position:** none');
+    expect(text).not.toContain('null');
+    expect(text).not.toContain('undefined');
   });
 });

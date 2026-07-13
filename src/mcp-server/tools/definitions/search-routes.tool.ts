@@ -5,6 +5,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const searchRoutes = tool('onebusaway_search_routes', {
@@ -16,8 +17,13 @@ export const searchRoutes = tool('onebusaway_search_routes', {
     query: z.string().min(1).describe('Route name or number (e.g. "44", "Link", or "RapidRide").'),
     maxCount: z
       .number()
+      .int()
+      .positive()
+      .max(100)
       .default(10)
-      .describe('Maximum number of results to return. Defaults to 10.'),
+      .describe(
+        'Maximum number of results to return. A positive integer, at most 100. Defaults to 10.',
+      ),
   }),
   output: z.object({
     routes: z
@@ -43,6 +49,11 @@ export const searchRoutes = tool('onebusaway_search_routes', {
           .describe('A transit route with agency and type information.'),
       )
       .describe('Routes matching the search query.'),
+    limitExceeded: z
+      .boolean()
+      .describe(
+        'True if more routes match than were returned; raise maxCount or refine the query to see all.',
+      ),
   }),
 
   errors: [
@@ -68,31 +79,45 @@ export const searchRoutes = tool('onebusaway_search_routes', {
   },
 
   async handler(input, ctx) {
-    const routes = await getOneBusAwayService().searchRoutes(
+    const result = await getOneBusAwayService().searchRoutes(
       { query: input.query, maxCount: input.maxCount },
       ctx,
     );
-    ctx.log.info('searchRoutes completed', { query: input.query, count: routes.length });
+    ctx.log.info('searchRoutes completed', {
+      query: input.query,
+      count: result.routes.length,
+      limitExceeded: result.limitExceeded,
+    });
 
-    ctx.enrich({ query: input.query, count: routes.length });
-    if (routes.length === 0) {
+    ctx.enrich({ query: input.query, count: result.routes.length });
+    if (result.routes.length === 0) {
       ctx.enrich.notice(
         `No routes matched "${input.query}". Try onebusaway_find_routes with lat/lon near the service area, or onebusaway_list_routes_for_agency with a known agency ID.`,
       );
+    } else if (result.limitExceeded) {
+      ctx.enrich.notice(
+        'Results truncated — more routes match than were returned. Raise maxCount or use a more specific query to see all matches.',
+      );
     }
 
-    return { routes };
+    return { routes: result.routes, limitExceeded: result.limitExceeded };
   },
 
   format: (result) => {
-    if (result.routes.length === 0) {
-      return [{ type: 'text', text: 'No routes found matching the query.' }];
+    const lines: string[] = [
+      `**Routes found:** ${result.routes.length} | **Limit exceeded:** ${result.limitExceeded}`,
+    ];
+    if (result.limitExceeded) {
+      lines.push('> Results truncated — raise maxCount or refine the query to see all matches.');
     }
-    const lines: string[] = [`**Routes found:** ${result.routes.length}`];
+    if (result.routes.length === 0) {
+      lines.push('No routes found matching the query.');
+      return [{ type: 'text', text: lines.join('\n') }];
+    }
     for (const r of result.routes) {
       lines.push(`\n## ${r.shortName}${r.longName ? ` — ${r.longName}` : ''}`);
       lines.push(`**ID:** ${r.id} | **Agency:** ${r.agencyName} (${r.agencyId})`);
-      if (r.description) lines.push(`**Description:** ${r.description}`);
+      lines.push(`**Description:** ${orNone(r.description)}`);
       lines.push(`**Type:** ${r.type}`);
     }
     return [{ type: 'text', text: lines.join('\n') }];

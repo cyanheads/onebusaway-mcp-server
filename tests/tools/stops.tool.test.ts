@@ -9,6 +9,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
 import { getStop } from '@/mcp-server/tools/definitions/get-stop.tool.js';
 import { searchStops } from '@/mcp-server/tools/definitions/search-stops.tool.js';
+import { expectContentParity } from './format-parity.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -126,6 +127,19 @@ describe('findStops', () => {
     const text = (findStops.format!(output)[0] as { text: string }).text;
     expect(text).toMatch(/truncated|narrow/i);
   });
+
+  it('renders coordinates at exact precision with full content parity', () => {
+    const output = {
+      stops: [{ ...STOP_FIXTURE, lat: 47.6586012, lon: -122.3146987 }],
+      limitExceeded: false,
+    };
+    const content = findStops.format!(output);
+    const text = (content[0] as { text: string }).text;
+    // toFixed(6) would have truncated these to 47.658601 / -122.314699.
+    expect(text).toContain('47.6586012');
+    expect(text).toContain('-122.3146987');
+    expectContentParity(content, output);
+  });
 });
 
 // ---- getStop ----
@@ -187,18 +201,19 @@ describe('getStop', () => {
 // ---- searchStops ----
 
 describe('searchStops', () => {
-  it('returns matching stops', async () => {
+  it('returns matching stops with limitExceeded flag', async () => {
     const ctx = createMockContext();
-    mockService.searchStops.mockResolvedValue([STOP_FIXTURE]);
+    mockService.searchStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
     const input = searchStops.input.parse({ query: '75403' });
     const result = await searchStops.handler(input, ctx);
     expect(result.stops).toHaveLength(1);
     expect(result.stops[0]!.id).toBe('1_75403');
+    expect(result.limitExceeded).toBe(false);
   });
 
   it('enriches with query and count', async () => {
     const ctx = createMockContext();
-    mockService.searchStops.mockResolvedValue([STOP_FIXTURE]);
+    mockService.searchStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
     const input = searchStops.input.parse({ query: '75403' });
     await searchStops.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
@@ -209,7 +224,7 @@ describe('searchStops', () => {
 
   it('enriches with notice when no matches', async () => {
     const ctx = createMockContext();
-    mockService.searchStops.mockResolvedValue([]);
+    mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = searchStops.input.parse({ query: 'nowhere' });
     await searchStops.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
@@ -217,21 +232,52 @@ describe('searchStops', () => {
     expect(enrichment.notice).toMatch(/no stops|no match/i);
   });
 
+  it('enriches with truncation notice when limitExceeded', async () => {
+    const ctx = createMockContext();
+    mockService.searchStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: true });
+    const input = searchStops.input.parse({ query: '75403' });
+    await searchStops.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.notice).toMatch(/truncated/i);
+  });
+
   it('returns empty list when no matches', async () => {
     const ctx = createMockContext();
-    mockService.searchStops.mockResolvedValue([]);
+    mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = searchStops.input.parse({ query: 'nowhere' });
     const result = await searchStops.handler(input, ctx);
     expect(result.stops).toHaveLength(0);
   });
 
   it('formats empty results', () => {
-    const text = (searchStops.format!({ stops: [] })[0] as { text: string }).text;
+    const text = (searchStops.format!({ stops: [], limitExceeded: false })[0] as { text: string })
+      .text;
     expect(text).toMatch(/no stops/i);
   });
 
   it('formats stop results with ID', () => {
-    const text = (searchStops.format!({ stops: [STOP_FIXTURE] })[0] as { text: string }).text;
+    const text = (
+      searchStops.format!({ stops: [STOP_FIXTURE], limitExceeded: false })[0] as { text: string }
+    ).text;
     expect(text).toContain('1_75403');
+  });
+
+  it('shows truncation notice in format when limitExceeded', () => {
+    const text = (
+      searchStops.format!({ stops: [STOP_FIXTURE], limitExceeded: true })[0] as { text: string }
+    ).text;
+    expect(text).toMatch(/truncated|maxCount/i);
+  });
+
+  it('renders coordinates at exact precision with full content parity', () => {
+    const output = {
+      stops: [{ ...STOP_FIXTURE, lat: 47.6586012, lon: -122.3146987 }],
+      limitExceeded: false,
+    };
+    const content = searchStops.format!(output);
+    const text = (content[0] as { text: string }).text;
+    expect(text).toContain('47.6586012');
+    expect(text).toContain('-122.3146987');
+    expectContentParity(content, output);
   });
 });

@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { coords, orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const listAgencies = tool('onebusaway_list_agencies', {
@@ -38,6 +39,11 @@ export const listAgencies = tool('onebusaway_list_agencies', {
           .describe('A transit agency with coverage information.'),
       )
       .describe('All agencies served by this OneBusAway instance.'),
+    limitExceeded: z
+      .boolean()
+      .describe(
+        'True if the upstream capped the agency list — some agencies were omitted. This endpoint has no pagination to retrieve them.',
+      ),
   }),
 
   // Agent-facing context: count of agencies returned.
@@ -47,31 +53,44 @@ export const listAgencies = tool('onebusaway_list_agencies', {
   },
 
   async handler(_input, ctx) {
-    const agencies = await getOneBusAwayService().listAgencies(ctx);
-    ctx.log.info('listAgencies completed', { count: agencies.length });
+    const result = await getOneBusAwayService().listAgencies(ctx);
+    ctx.log.info('listAgencies completed', {
+      count: result.agencies.length,
+      limitExceeded: result.limitExceeded,
+    });
 
-    ctx.enrich({ count: agencies.length });
-    if (agencies.length === 0) {
+    ctx.enrich({ count: result.agencies.length });
+    if (result.agencies.length === 0) {
       ctx.enrich.notice(
         'No agencies returned. The OneBusAway instance may be misconfigured or unreachable.',
       );
+    } else if (result.limitExceeded) {
+      ctx.enrich.notice(
+        'Results truncated upstream — some agencies were omitted; this endpoint has no pagination to retrieve the rest.',
+      );
     }
 
-    return { agencies };
+    return { agencies: result.agencies, limitExceeded: result.limitExceeded };
   },
 
   format: (result) => {
-    if (result.agencies.length === 0) {
-      return [{ type: 'text', text: 'No agencies found.' }];
+    const lines: string[] = [
+      `**Agencies:** ${result.agencies.length} | **Limit exceeded:** ${result.limitExceeded}`,
+    ];
+    if (result.limitExceeded) {
+      lines.push('> Results truncated upstream — some agencies omitted (no pagination available).');
     }
-    const lines: string[] = [];
+    if (result.agencies.length === 0) {
+      lines.push('No agencies found.');
+      return [{ type: 'text', text: lines.join('\n') }];
+    }
     for (const a of result.agencies) {
       lines.push(`## ${a.name}`);
       lines.push(`**ID:** ${a.id} | **Timezone:** ${a.timezone}`);
       lines.push(`**URL:** ${a.url}`);
-      if (a.phone) lines.push(`**Phone:** ${a.phone}`);
+      lines.push(`**Phone:** ${orNone(a.phone)}`);
       lines.push(
-        `**Coverage center:** ${a.coverageCenter.lat.toFixed(4)}, ${a.coverageCenter.lon.toFixed(4)} (±${a.coverageSpan.latSpan.toFixed(3)}° lat, ±${a.coverageSpan.lonSpan.toFixed(3)}° lon)`,
+        `**Coverage center:** ${coords(a.coverageCenter.lat, a.coverageCenter.lon)} (±${a.coverageSpan.latSpan}° lat, ±${a.coverageSpan.lonSpan}° lon)`,
       );
     }
     return [{ type: 'text', text: lines.join('\n') }];

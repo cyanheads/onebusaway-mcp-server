@@ -6,6 +6,7 @@
 import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { listAgencies } from '@/mcp-server/tools/definitions/list-agencies.tool.js';
+import { expectContentParity } from './format-parity.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -23,38 +24,45 @@ beforeEach(() => {
 });
 
 describe('listAgencies', () => {
-  it('returns agencies from service', async () => {
+  it('returns agencies from service with limitExceeded flag', async () => {
     const ctx = createMockContext();
-    mockService.listAgencies.mockResolvedValue([
-      {
-        id: '1',
-        name: 'Metro Transit',
-        url: 'https://kingcounty.gov/metro',
-        phone: '206-553-3000',
-        timezone: 'America/Los_Angeles',
-        coverageCenter: { lat: 47.6062, lon: -122.3321 },
-        coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
-      },
-    ]);
+    mockService.listAgencies.mockResolvedValue({
+      agencies: [
+        {
+          id: '1',
+          name: 'Metro Transit',
+          url: 'https://kingcounty.gov/metro',
+          phone: '206-553-3000',
+          timezone: 'America/Los_Angeles',
+          coverageCenter: { lat: 47.6062, lon: -122.3321 },
+          coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
+        },
+      ],
+      limitExceeded: false,
+    });
     const input = listAgencies.input.parse({});
     const result = await listAgencies.handler(input, ctx);
     expect(result.agencies).toHaveLength(1);
     expect(result.agencies[0]).toMatchObject({ id: '1', name: 'Metro Transit' });
+    expect(result.limitExceeded).toBe(false);
   });
 
   it('enriches with count', async () => {
     const ctx = createMockContext();
-    mockService.listAgencies.mockResolvedValue([
-      {
-        id: '1',
-        name: 'Metro Transit',
-        url: 'https://kingcounty.gov/metro',
-        phone: null,
-        timezone: 'America/Los_Angeles',
-        coverageCenter: { lat: 47.6062, lon: -122.3321 },
-        coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
-      },
-    ]);
+    mockService.listAgencies.mockResolvedValue({
+      agencies: [
+        {
+          id: '1',
+          name: 'Metro Transit',
+          url: 'https://kingcounty.gov/metro',
+          phone: null,
+          timezone: 'America/Los_Angeles',
+          coverageCenter: { lat: 47.6062, lon: -122.3321 },
+          coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
+        },
+      ],
+      limitExceeded: false,
+    });
     const input = listAgencies.input.parse({});
     await listAgencies.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
@@ -64,7 +72,7 @@ describe('listAgencies', () => {
 
   it('enriches with notice when no agencies found', async () => {
     const ctx = createMockContext();
-    mockService.listAgencies.mockResolvedValue([]);
+    mockService.listAgencies.mockResolvedValue({ agencies: [], limitExceeded: false });
     const input = listAgencies.input.parse({});
     await listAgencies.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
@@ -72,9 +80,31 @@ describe('listAgencies', () => {
     expect(enrichment.notice).toMatch(/no agencies/i);
   });
 
+  it('enriches with truncation notice when limitExceeded', async () => {
+    const ctx = createMockContext();
+    mockService.listAgencies.mockResolvedValue({
+      agencies: [
+        {
+          id: '1',
+          name: 'Metro Transit',
+          url: 'https://kingcounty.gov/metro',
+          phone: null,
+          timezone: 'America/Los_Angeles',
+          coverageCenter: { lat: 47.6062, lon: -122.3321 },
+          coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
+        },
+      ],
+      limitExceeded: true,
+    });
+    const input = listAgencies.input.parse({});
+    await listAgencies.handler(input, ctx);
+    const enrichment = getEnrichment(ctx);
+    expect(enrichment.notice).toMatch(/truncated/i);
+  });
+
   it('returns empty agencies when none found', async () => {
     const ctx = createMockContext();
-    mockService.listAgencies.mockResolvedValue([]);
+    mockService.listAgencies.mockResolvedValue({ agencies: [], limitExceeded: false });
     const input = listAgencies.input.parse({});
     const result = await listAgencies.handler(input, ctx);
     expect(result.agencies).toHaveLength(0);
@@ -100,6 +130,7 @@ describe('listAgencies', () => {
           coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
         },
       ],
+      limitExceeded: false,
     };
     const blocks = listAgencies.format!(output);
     expect(blocks[0]!.type).toBe('text');
@@ -109,8 +140,41 @@ describe('listAgencies', () => {
     expect(text).toContain('America/Los_Angeles');
   });
 
+  it('renders exact coverage center/span, explicit-none phone, full parity', () => {
+    const output = {
+      agencies: [
+        {
+          id: '1',
+          name: 'Metro Transit',
+          url: 'https://kingcounty.gov/metro',
+          phone: null,
+          timezone: 'America/Los_Angeles',
+          coverageCenter: { lat: 47.606211, lon: -122.332107 },
+          coverageSpan: { latSpan: 0.512345, lonSpan: 0.834567 },
+        },
+      ],
+      limitExceeded: false,
+    };
+    const content = listAgencies.format!(output);
+    const text = (content[0] as { text: string }).text;
+    // toFixed(4)/toFixed(3) would have rounded the center and span.
+    expect(text).toContain('47.606211');
+    expect(text).toContain('-122.332107');
+    expect(text).toContain('0.512345');
+    expect(text).toContain('0.834567');
+    // Null phone renders explicitly, never omitted or as the string "null".
+    expect(text).toContain('**Phone:** none');
+    expect(text).not.toContain('null');
+    expectContentParity(content, output);
+  });
+
   it('formats empty agencies list', () => {
-    const blocks = listAgencies.format!({ agencies: [] });
+    const blocks = listAgencies.format!({ agencies: [], limitExceeded: false });
     expect((blocks[0] as { text: string }).text).toContain('No agencies');
+  });
+
+  it('shows truncation notice in format when limitExceeded', () => {
+    const blocks = listAgencies.format!({ agencies: [], limitExceeded: true });
+    expect((blocks[0] as { text: string }).text).toMatch(/truncated/i);
   });
 });

@@ -5,6 +5,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { listOrNone, orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 /** Format Unix milliseconds as a readable date-time string. */
@@ -105,11 +106,11 @@ export const getAlert = tool('onebusaway_get_alert', {
 
   format: (result) => {
     const lines: string[] = [`## ${result.summary || 'Service Alert'} (${result.id})`];
-    if (result.description) lines.push(result.description);
-    if (result.reason) lines.push(`**Reason:** ${result.reason}`);
-    if (result.severity) lines.push(`**Severity:** ${result.severity}`);
-    if (result.consequenceMessage) lines.push(`**Consequence:** ${result.consequenceMessage}`);
-    if (result.url) lines.push(`**More info:** ${result.url}`);
+    lines.push(`**Description:** ${orNone(result.description)}`);
+    lines.push(`**Reason:** ${orNone(result.reason)}`);
+    lines.push(`**Severity:** ${orNone(result.severity)}`);
+    lines.push(`**Consequence:** ${orNone(result.consequenceMessage)}`);
+    lines.push(`**More info:** ${orNone(result.url)}`);
 
     if (result.activeWindows.length > 0) {
       lines.push('\n**Active windows:**');
@@ -123,22 +124,17 @@ export const getAlert = tool('onebusaway_get_alert', {
     if (result.affects.length > 0) {
       lines.push('\n**Affects:**');
       for (const a of result.affects) {
-        const parts: string[] = [];
-        if (a.agencyId) parts.push(`agency:${a.agencyId}`);
-        if (a.routeId) parts.push(`route:${a.routeId}`);
-        if (a.stopId) parts.push(`stop:${a.stopId}`);
-        if (a.tripId) parts.push(`trip:${a.tripId}`);
-        if (parts.length > 0) lines.push(`- ${parts.join(' ')}`);
+        lines.push(
+          `- agency:${orNone(a.agencyId)} route:${orNone(a.routeId)} stop:${orNone(a.stopId)} trip:${orNone(a.tripId)}`,
+        );
       }
     }
 
     if (result.consequences.length > 0) {
       lines.push('\n**Consequences:**');
       for (const c of result.consequences) {
-        if (c.condition) lines.push(`- ${c.condition}`);
-        if (c.diversionStopIds?.length) {
-          lines.push(`  Diversion stops: ${c.diversionStopIds.join(', ')}`);
-        }
+        lines.push(`- ${orNone(c.condition)}`);
+        lines.push(`  Diversion stops: ${listOrNone(c.diversionStopIds ?? [])}`);
       }
     }
 

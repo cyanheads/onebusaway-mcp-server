@@ -53,6 +53,39 @@ describe('findStops input validation', () => {
     const result = findStops.input.parse({ lat: 47.6, lon: -122.3, query: '' });
     expect(result.query).toBe('');
   });
+
+  it('rejects latitude above 90', () => {
+    expect(() => findStops.input.parse({ lat: 91, lon: -122.3 })).toThrow();
+  });
+
+  it('rejects latitude below -90', () => {
+    expect(() => findStops.input.parse({ lat: -91, lon: -122.3 })).toThrow();
+  });
+
+  it('rejects longitude above 180', () => {
+    expect(() => findStops.input.parse({ lat: 47.6, lon: 181 })).toThrow();
+  });
+
+  it('rejects longitude below -180', () => {
+    expect(() => findStops.input.parse({ lat: 47.6, lon: -181 })).toThrow();
+  });
+
+  it('rejects negative radius', () => {
+    expect(() => findStops.input.parse({ lat: 47.6, lon: -122.3, radius: -1 })).toThrow();
+  });
+
+  it('rejects zero radius', () => {
+    expect(() => findStops.input.parse({ lat: 47.6, lon: -122.3, radius: 0 })).toThrow();
+  });
+
+  it('rejects radius above the 1600m cap', () => {
+    expect(() => findStops.input.parse({ lat: 47.6, lon: -122.3, radius: 1601 })).toThrow();
+  });
+
+  it('accepts boundary lat/lon and radius', () => {
+    expect(() => findStops.input.parse({ lat: 90, lon: 180, radius: 1600 })).not.toThrow();
+    expect(() => findStops.input.parse({ lat: -90, lon: -180, radius: 1 })).not.toThrow();
+  });
 });
 
 // ---- searchStops ----
@@ -78,6 +111,24 @@ describe('searchStops input validation', () => {
 
   it('rejects non-numeric maxCount', () => {
     expect(() => searchStops.input.parse({ query: 'test', maxCount: 'all' })).toThrow();
+  });
+
+  it('rejects non-positive maxCount', () => {
+    expect(() => searchStops.input.parse({ query: 'x', maxCount: 0 })).toThrow();
+    expect(() => searchStops.input.parse({ query: 'x', maxCount: -5 })).toThrow();
+  });
+
+  it('rejects non-integer maxCount', () => {
+    expect(() => searchStops.input.parse({ query: 'x', maxCount: 2.5 })).toThrow();
+  });
+
+  it('rejects maxCount above the cap of 100', () => {
+    expect(() => searchStops.input.parse({ query: 'x', maxCount: 101 })).toThrow();
+  });
+
+  it('accepts boundary maxCount values', () => {
+    expect(searchStops.input.parse({ query: 'x', maxCount: 1 }).maxCount).toBe(1);
+    expect(searchStops.input.parse({ query: 'x', maxCount: 100 }).maxCount).toBe(100);
   });
 });
 
@@ -117,6 +168,47 @@ describe('findRoutes input validation', () => {
   it('rejects string lat', () => {
     expect(() => findRoutes.input.parse({ lat: 'forty-seven', lon: -122.3 })).toThrow();
   });
+
+  it('rejects latitude above 90', () => {
+    expect(() => findRoutes.input.parse({ lat: 91, lon: -122.3 })).toThrow();
+  });
+
+  it('rejects latitude below -90', () => {
+    expect(() => findRoutes.input.parse({ lat: -91, lon: -122.3 })).toThrow();
+  });
+
+  it('rejects longitude above 180', () => {
+    expect(() => findRoutes.input.parse({ lat: 47.6, lon: 181 })).toThrow();
+  });
+
+  it('rejects longitude below -180', () => {
+    expect(() => findRoutes.input.parse({ lat: 47.6, lon: -181 })).toThrow();
+  });
+
+  it('rejects negative radius', () => {
+    expect(() => findRoutes.input.parse({ lat: 47.6, lon: -122.3, radius: -1 })).toThrow();
+  });
+
+  it('rejects zero radius', () => {
+    expect(() => findRoutes.input.parse({ lat: 47.6, lon: -122.3, radius: 0 })).toThrow();
+  });
+
+  it('rejects radius above the 1600m cap', () => {
+    expect(() => findRoutes.input.parse({ lat: 47.6, lon: -122.3, radius: 1601 })).toThrow();
+  });
+
+  it('rejects non-positive latSpan or lonSpan', () => {
+    expect(() => findRoutes.input.parse({ lat: 47.6, lon: -122.3, latSpan: -0.1 })).toThrow();
+    expect(() => findRoutes.input.parse({ lat: 47.6, lon: -122.3, lonSpan: 0 })).toThrow();
+  });
+
+  it('accepts boundary lat/lon, radius, and positive spans', () => {
+    expect(() => findRoutes.input.parse({ lat: 90, lon: 180, radius: 1600 })).not.toThrow();
+    expect(() => findRoutes.input.parse({ lat: -90, lon: -180, radius: 1 })).not.toThrow();
+    expect(() =>
+      findRoutes.input.parse({ lat: 47.6, lon: -122.3, latSpan: 0.1, lonSpan: 0.2 }),
+    ).not.toThrow();
+  });
 });
 
 // ---- searchRoutes ----
@@ -133,6 +225,24 @@ describe('searchRoutes input validation', () => {
   it('accepts valid query with default maxCount', () => {
     const result = searchRoutes.input.parse({ query: '44' });
     expect(result.maxCount).toBe(10);
+  });
+
+  it('rejects non-positive maxCount', () => {
+    expect(() => searchRoutes.input.parse({ query: 'x', maxCount: 0 })).toThrow();
+    expect(() => searchRoutes.input.parse({ query: 'x', maxCount: -5 })).toThrow();
+  });
+
+  it('rejects non-integer maxCount', () => {
+    expect(() => searchRoutes.input.parse({ query: 'x', maxCount: 2.5 })).toThrow();
+  });
+
+  it('rejects maxCount above the cap of 100', () => {
+    expect(() => searchRoutes.input.parse({ query: 'x', maxCount: 101 })).toThrow();
+  });
+
+  it('accepts boundary maxCount values', () => {
+    expect(searchRoutes.input.parse({ query: 'x', maxCount: 1 }).maxCount).toBe(1);
+    expect(searchRoutes.input.parse({ query: 'x', maxCount: 100 }).maxCount).toBe(100);
   });
 });
 

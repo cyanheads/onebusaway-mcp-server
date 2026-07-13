@@ -6,6 +6,7 @@
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTrip } from '@/mcp-server/tools/definitions/get-trip.tool.js';
+import { expectContentParity } from './format-parity.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -32,10 +33,12 @@ const TRIP_RESULT = {
   tripId: 'trip_abc',
   routeShortName: '44',
   tripHeadsign: 'Downtown Seattle',
+  blockId: '1_block_42',
   status: {
     phase: 'in_progress',
     predicted: true,
-    position: { lat: 47.659, lon: -122.315 },
+    // High-precision coordinates so a toFixed(5) regression would visibly round them.
+    position: { lat: 47.6598765, lon: -122.3151234 },
     scheduleDeviation: 60,
     nextStop: '1_75403',
     closestStop: '1_75400',
@@ -48,14 +51,15 @@ const TRIP_RESULT = {
       stopName: 'U-District',
       arrivalTime: SCHED_ARR_1,
       departureTime: SCHED_DEP_1,
-      distanceAlongTripMeters: 500,
+      // Fractional so a Math.round regression would be caught (would render 501).
+      distanceAlongTripMeters: 500.7,
     },
     {
       stopId: '1_75403',
       stopName: 'University Way',
       arrivalTime: SCHED_ARR_2,
       departureTime: SCHED_DEP_2,
-      distanceAlongTripMeters: 1200,
+      distanceAlongTripMeters: 1200.4,
     },
   ],
   situations: [],
@@ -123,5 +127,18 @@ describe('getTrip', () => {
     const early = { ...TRIP_RESULT, status: { ...TRIP_RESULT.status, scheduleDeviation: -120 } };
     const text = (getTrip.format!(early)[0] as { text: string }).text;
     expect(text).toContain('early');
+  });
+
+  it('renders position and stop distances at exact precision, not rounded', () => {
+    const text = (getTrip.format!(TRIP_RESULT)[0] as { text: string }).text;
+    // toFixed(5) would round the coordinates; Math.round would turn 500.7 into 501.
+    expect(text).toContain('47.6598765');
+    expect(text).toContain('-122.3151234');
+    expect(text).toContain('500.7');
+    expect(text).toContain('1200.4');
+  });
+
+  it('has full content[]/structuredContent value parity', () => {
+    expectContentParity(getTrip.format!(TRIP_RESULT), TRIP_RESULT);
   });
 });

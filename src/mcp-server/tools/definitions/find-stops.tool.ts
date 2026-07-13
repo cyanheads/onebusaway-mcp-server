@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { coords } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const findStops = tool('onebusaway_find_stops', {
@@ -12,12 +13,16 @@ export const findStops = tool('onebusaway_find_stops', {
     'Find bus stops near a location. Returns stops within a radius, each with ID, name, direction, served routes, and wheelchair boarding status. Use stopId values from results to fetch real-time arrivals with onebusaway_get_arrivals. Optionally filter by stop code (the number printed on the stop sign, e.g. "75403").',
   annotations: { readOnlyHint: true },
   input: z.object({
-    lat: z.number().describe('Latitude of the search center.'),
-    lon: z.number().describe('Longitude of the search center.'),
+    lat: z.number().min(-90).max(90).describe('Latitude of the search center, in [-90, 90].'),
+    lon: z.number().min(-180).max(180).describe('Longitude of the search center, in [-180, 180].'),
     radius: z
       .number()
+      .positive()
+      .max(1600)
       .default(300)
-      .describe('Search radius in meters. Defaults to 300m. Max ~1600m before results degrade.'),
+      .describe(
+        'Search radius in meters. Must be positive; capped at 1600m, beyond which results degrade. Defaults to 300m.',
+      ),
     query: z
       .string()
       .optional()
@@ -106,7 +111,7 @@ export const findStops = tool('onebusaway_find_stops', {
     for (const s of result.stops) {
       lines.push(`\n## ${s.name}`);
       lines.push(`**ID:** ${s.id} | **Code:** ${s.code} | **Direction:** ${s.direction}`);
-      lines.push(`**Coordinates:** ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}`);
+      lines.push(`**Coordinates:** ${coords(s.lat, s.lon)}`);
       lines.push(`**Routes:** ${s.routeIds.join(', ') || 'none'}`);
       lines.push(`**Wheelchair:** ${s.wheelchairBoarding}`);
     }

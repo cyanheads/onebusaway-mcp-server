@@ -5,6 +5,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { coords } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const getStop = tool('onebusaway_get_stop', {
@@ -57,7 +58,7 @@ export const getStop = tool('onebusaway_get_stop', {
       `## ${result.name}`,
       `**ID:** ${result.id} | **Code:** ${result.code}`,
       `**Direction:** ${result.direction}`,
-      `**Coordinates:** ${result.lat.toFixed(6)}, ${result.lon.toFixed(6)}`,
+      `**Coordinates:** ${coords(result.lat, result.lon)}`,
       `**Routes:** ${result.routeIds.join(', ') || 'none'}`,
       `**Wheelchair:** ${result.wheelchairBoarding}`,
     ];

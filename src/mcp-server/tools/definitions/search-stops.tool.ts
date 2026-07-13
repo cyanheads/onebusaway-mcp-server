@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { coords } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const searchStops = tool('onebusaway_search_stops', {
@@ -18,8 +19,13 @@ export const searchStops = tool('onebusaway_search_stops', {
       .describe('Stop name fragment or stop code (e.g. "University Way" or "75403").'),
     maxCount: z
       .number()
+      .int()
+      .positive()
+      .max(100)
       .default(10)
-      .describe('Maximum number of results to return. Defaults to 10.'),
+      .describe(
+        'Maximum number of results to return. A positive integer, at most 100. Defaults to 10.',
+      ),
   }),
   output: z.object({
     stops: z
@@ -44,6 +50,11 @@ export const searchStops = tool('onebusaway_search_stops', {
           .describe('A transit stop with location and route information.'),
       )
       .describe('Stops matching the search query.'),
+    limitExceeded: z
+      .boolean()
+      .describe(
+        'True if more stops match than were returned; raise maxCount or refine the query to see all.',
+      ),
   }),
 
   // Agent-facing context: query echo and empty-result guidance.
@@ -59,31 +70,45 @@ export const searchStops = tool('onebusaway_search_stops', {
   },
 
   async handler(input, ctx) {
-    const stops = await getOneBusAwayService().searchStops(
+    const result = await getOneBusAwayService().searchStops(
       { query: input.query, maxCount: input.maxCount },
       ctx,
     );
-    ctx.log.info('searchStops completed', { query: input.query, count: stops.length });
+    ctx.log.info('searchStops completed', {
+      query: input.query,
+      count: result.stops.length,
+      limitExceeded: result.limitExceeded,
+    });
 
-    ctx.enrich({ query: input.query, count: stops.length });
-    if (stops.length === 0) {
+    ctx.enrich({ query: input.query, count: result.stops.length });
+    if (result.stops.length === 0) {
       ctx.enrich.notice(
         `No stops matched "${input.query}". Try a different name fragment, a stop code, or use onebusaway_find_stops with lat/lon coordinates.`,
       );
+    } else if (result.limitExceeded) {
+      ctx.enrich.notice(
+        'Results truncated — more stops match than were returned. Raise maxCount or use a more specific query to see all matches.',
+      );
     }
 
-    return { stops };
+    return { stops: result.stops, limitExceeded: result.limitExceeded };
   },
 
   format: (result) => {
-    if (result.stops.length === 0) {
-      return [{ type: 'text', text: 'No stops found matching the query.' }];
+    const lines: string[] = [
+      `**Stops found:** ${result.stops.length} | **Limit exceeded:** ${result.limitExceeded}`,
+    ];
+    if (result.limitExceeded) {
+      lines.push('> Results truncated — raise maxCount or refine the query to see all matches.');
     }
-    const lines: string[] = [`**Stops found:** ${result.stops.length}`];
+    if (result.stops.length === 0) {
+      lines.push('No stops found matching the query.');
+      return [{ type: 'text', text: lines.join('\n') }];
+    }
     for (const s of result.stops) {
       lines.push(`\n## ${s.name}`);
       lines.push(`**ID:** ${s.id} | **Code:** ${s.code} | **Direction:** ${s.direction}`);
-      lines.push(`**Coordinates:** ${s.lat.toFixed(6)}, ${s.lon.toFixed(6)}`);
+      lines.push(`**Coordinates:** ${coords(s.lat, s.lon)}`);
       lines.push(`**Routes:** ${s.routeIds.join(', ') || 'none'}`);
       lines.push(`**Wheelchair:** ${s.wheelchairBoarding}`);
     }

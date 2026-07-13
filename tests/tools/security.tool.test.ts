@@ -118,14 +118,17 @@ describe('searchStops security', () => {
     // Payloads that pass Zod min(1) only
     if (payload.length === 0) return;
     const ctx = createMockContext();
-    mockService.searchStops.mockResolvedValue([]);
+    mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = searchStops.input.parse({ query: payload });
     await expect(searchStops.handler(input, ctx)).resolves.toBeDefined();
   });
 
   it('format output does not contain API key', async () => {
     const ctx = createMockContext();
-    mockService.searchStops.mockResolvedValue([makeStopResult('1_75403')]);
+    mockService.searchStops.mockResolvedValue({
+      stops: [makeStopResult('1_75403')],
+      limitExceeded: false,
+    });
     const input = searchStops.input.parse({ query: '75403' });
     const result = await searchStops.handler(input, ctx);
     const text = (searchStops.format!(result)[0] as { text: string }).text;
@@ -197,14 +200,15 @@ describe('searchRoutes security', () => {
     '<script>alert(1)</script>',
   ])('injection payload "%s" does not crash handler', async (payload) => {
     const ctx = createMockContext();
-    mockService.searchRoutes.mockResolvedValue([]);
+    mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = searchRoutes.input.parse({ query: payload });
     await expect(searchRoutes.handler(input, ctx)).resolves.toBeDefined();
   });
 
   it('format output does not contain API key', async () => {
-    mockService.searchRoutes.mockResolvedValue([]);
-    const text = (searchRoutes.format!({ routes: [] })[0] as { text: string }).text;
+    mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
+    const text = (searchRoutes.format!({ routes: [], limitExceeded: false })[0] as { text: string })
+      .text;
     expect(text).not.toContain('secret-api-key-12345');
   });
 });
@@ -213,14 +217,15 @@ describe('searchRoutes security', () => {
 
 describe('findRoutes security', () => {
   it('format output does not contain API key', async () => {
-    const text = (findRoutes.format!({ routes: [] })[0] as { text: string }).text;
+    const text = (findRoutes.format!({ routes: [], limitExceeded: false })[0] as { text: string })
+      .text;
     expect(text).not.toContain('secret-api-key-12345');
   });
 
   it('oversized query string does not crash', async () => {
     const ctx = createMockContext();
     const bigQuery = 'R'.repeat(5000);
-    mockService.findRoutes.mockResolvedValue([]);
+    mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, query: bigQuery });
     await expect(findRoutes.handler(input, ctx)).resolves.toBeDefined();
   });
@@ -250,7 +255,9 @@ describe('getRoute security', () => {
 
 describe('listRoutesForAgency security', () => {
   it('format output does not contain API key', async () => {
-    const text = (listRoutesForAgency.format!({ routes: [] })[0] as { text: string }).text;
+    const text = (
+      listRoutesForAgency.format!({ routes: [], limitExceeded: false })[0] as { text: string }
+    ).text;
     expect(text).not.toContain('secret-api-key-12345');
   });
 });
@@ -259,7 +266,11 @@ describe('listRoutesForAgency security', () => {
 
 describe('listAgencies security', () => {
   it('format output does not contain API key', async () => {
-    const text = (listAgencies.format!({ agencies: [] })[0] as { text: string }).text;
+    const text = (
+      listAgencies.format!({ agencies: [], limitExceeded: false })[0] as {
+        text: string;
+      }
+    ).text;
     expect(text).not.toContain('secret-api-key-12345');
   });
 });
@@ -268,7 +279,11 @@ describe('listAgencies security', () => {
 
 describe('getVehicles security', () => {
   it('format output does not contain API key', async () => {
-    const text = (getVehicles.format!({ vehicles: [] })[0] as { text: string }).text;
+    const text = (
+      getVehicles.format!({ vehicles: [], limitExceeded: false })[0] as {
+        text: string;
+      }
+    ).text;
     expect(text).not.toContain('secret-api-key-12345');
   });
 });

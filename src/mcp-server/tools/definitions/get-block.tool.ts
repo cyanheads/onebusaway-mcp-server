@@ -5,6 +5,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { listOrNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 /** Format seconds-from-midnight (GTFS) as HH:MM. */
@@ -107,11 +108,9 @@ export const getBlock = tool('onebusaway_get_block', {
     const lines: string[] = [
       `## Block ${result.blockId}`,
       `**Trips:** ${result.trips.length}`,
-      `**Active service IDs:** ${result.activeServiceIds.join(', ') || 'none'}`,
+      `**Active service IDs:** ${listOrNone(result.activeServiceIds)}`,
+      `**Inactive service IDs:** ${listOrNone(result.inactiveServiceIds)}`,
     ];
-    if (result.inactiveServiceIds.length > 0) {
-      lines.push(`**Inactive service IDs:** ${result.inactiveServiceIds.join(', ')}`);
-    }
 
     for (const [i, t] of result.trips.entries()) {
       const first = t.blockStopTimes[0];

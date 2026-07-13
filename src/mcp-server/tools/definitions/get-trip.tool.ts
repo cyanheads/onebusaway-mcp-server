@@ -5,6 +5,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { coordsOrNone, orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 /** Format Unix milliseconds as HH:MM. */
@@ -142,13 +143,11 @@ export const getTrip = tool('onebusaway_get_trip', {
       `**Schedule deviation:** ${devLabel} (${s.scheduleDeviation}s)`,
     ];
 
-    if (result.blockId) lines.push(`**Block:** ${result.blockId}`);
-    if (s.vehicleId) lines.push(`**Vehicle:** ${s.vehicleId}`);
-    if (s.position) {
-      lines.push(`**Position:** ${s.position.lat.toFixed(5)}, ${s.position.lon.toFixed(5)}`);
-    }
-    if (s.nextStop) lines.push(`**Next stop:** ${s.nextStop}`);
-    if (s.closestStop) lines.push(`**Closest stop:** ${s.closestStop}`);
+    lines.push(`**Block:** ${orNone(result.blockId)}`);
+    lines.push(`**Vehicle:** ${orNone(s.vehicleId)}`);
+    lines.push(`**Position:** ${coordsOrNone(s.position)}`);
+    lines.push(`**Next stop:** ${orNone(s.nextStop)}`);
+    lines.push(`**Closest stop:** ${orNone(s.closestStop)}`);
     lines.push(`**Last update:** ${fmtTimeMs(s.lastUpdateTime)} (${s.lastUpdateTime})`);
 
     if (result.situations.length > 0) {
@@ -159,7 +158,7 @@ export const getTrip = tool('onebusaway_get_trip', {
       lines.push('\n## Stop Sequence');
       for (const st of result.schedule) {
         lines.push(
-          `- **${st.stopName}** (${st.stopId}) — arr ${fmtTimeSec(st.arrivalTime)} [${st.arrivalTime}s], dep ${fmtTimeSec(st.departureTime)} [${st.departureTime}s] | dist ${Math.round(st.distanceAlongTripMeters)}m`,
+          `- **${st.stopName}** (${st.stopId}) — arr ${fmtTimeSec(st.arrivalTime)} [${st.arrivalTime}s], dep ${fmtTimeSec(st.departureTime)} [${st.departureTime}s] | dist ${st.distanceAlongTripMeters}m`,
         );
       }
     }

@@ -169,7 +169,7 @@ export class OneBusAwayService {
 
   // ----- Agencies -----
 
-  async listAgencies(ctx: Context): Promise<Agency[]> {
+  async listAgencies(ctx: Context): Promise<{ agencies: Agency[]; limitExceeded: boolean }> {
     ctx.log.debug('listAgencies');
     try {
       const resp = await this.client.agenciesWithCoverage.list();
@@ -177,7 +177,7 @@ export class OneBusAwayService {
       const refs = resp.data.references;
       const agencyMap = new Map(refs.agencies.map((a) => [a.id, a]));
 
-      return resp.data.list.map((item) => {
+      const agencies = resp.data.list.map((item) => {
         const agencyRef = agencyMap.get(item.agencyId);
         return {
           id: item.agencyId,
@@ -189,6 +189,7 @@ export class OneBusAwayService {
           coverageSpan: { latSpan: item.latSpan, lonSpan: item.lonSpan },
         };
       });
+      return { agencies, limitExceeded: resp.data.limitExceeded };
     } catch (err) {
       classifyError(err, 'agencies', 'list');
     }
@@ -231,18 +232,21 @@ export class OneBusAwayService {
     }
   }
 
-  async searchStops(params: { query: string; maxCount?: number }, ctx: Context): Promise<Stop[]> {
+  async searchStops(
+    params: { query: string; maxCount?: number },
+    ctx: Context,
+  ): Promise<{ stops: Stop[]; limitExceeded: boolean }> {
     ctx.log.debug('searchStops', { query: params.query });
     try {
       const resp = await this.client.searchForStop.list({
         input: params.query,
         ...(params.maxCount != null && { maxCount: params.maxCount }),
       });
-      if (!resp?.data) return [];
-      return resp.data.list.map(normalizeStop);
+      if (!resp?.data) return { stops: [], limitExceeded: false };
+      return { stops: resp.data.list.map(normalizeStop), limitExceeded: resp.data.limitExceeded };
     } catch (err) {
       // OBA returns 404 when no stops match — not a real error, just an empty result.
-      if (err instanceof OnebusawaySDK.NotFoundError) return [];
+      if (err instanceof OnebusawaySDK.NotFoundError) return { stops: [], limitExceeded: false };
       classifyError(err, 'search/stop', params.query);
     }
   }
@@ -250,23 +254,33 @@ export class OneBusAwayService {
   // ----- Routes -----
 
   async findRoutes(
-    params: { lat: number; lon: number; radius?: number; query?: string },
+    params: {
+      lat: number;
+      lon: number;
+      radius?: number;
+      latSpan?: number;
+      lonSpan?: number;
+      query?: string;
+    },
     ctx: Context,
-  ): Promise<Route[]> {
+  ): Promise<{ routes: Route[]; limitExceeded: boolean }> {
     ctx.log.debug('findRoutes', { lat: params.lat, lon: params.lon });
     try {
       const resp = await this.client.routesForLocation.list({
         lat: params.lat,
         lon: params.lon,
         ...(params.radius != null && { radius: params.radius }),
+        ...(params.latSpan != null && { latSpan: params.latSpan }),
+        ...(params.lonSpan != null && { lonSpan: params.lonSpan }),
         ...(params.query && { query: params.query }),
       });
       if (!resp?.data)
         throw serviceUnavailable('OneBusAway returned no data for the routes-for-location query.');
       const agencyMap = new Map(resp.data.references.agencies.map((a) => [a.id, a]));
-      return resp.data.list.map((r) =>
+      const routes = resp.data.list.map((r) =>
         normalizeRoute(r, agencyMap.get(r.agencyId)?.name ?? r.agencyId),
       );
+      return { routes, limitExceeded: resp.data.limitExceeded };
     } catch (err) {
       classifyError(err, 'routes-for-location', 'query');
     }
@@ -287,7 +301,10 @@ export class OneBusAwayService {
     }
   }
 
-  async listRoutesForAgency(agencyId: string, ctx: Context): Promise<Route[]> {
+  async listRoutesForAgency(
+    agencyId: string,
+    ctx: Context,
+  ): Promise<{ routes: Route[]; limitExceeded: boolean }> {
     ctx.log.debug('listRoutesForAgency', { agencyId });
     try {
       const resp = await this.client.routesForAgency.list(agencyId);
@@ -299,27 +316,32 @@ export class OneBusAwayService {
       // routes-for-agency references block may not include the agency itself
       const agencyName =
         resp.data.references.agencies.find((a) => a.id === agencyId)?.name ?? agencyId;
-      return resp.data.list.map((r) => normalizeRoute(r, agencyName));
+      const routes = resp.data.list.map((r) => normalizeRoute(r, agencyName));
+      return { routes, limitExceeded: resp.data.limitExceeded };
     } catch (err) {
       classifyError(err, 'agency', agencyId, 'agency_not_found');
     }
   }
 
-  async searchRoutes(params: { query: string; maxCount?: number }, ctx: Context): Promise<Route[]> {
+  async searchRoutes(
+    params: { query: string; maxCount?: number },
+    ctx: Context,
+  ): Promise<{ routes: Route[]; limitExceeded: boolean }> {
     ctx.log.debug('searchRoutes', { query: params.query });
     try {
       const resp = await this.client.searchForRoute.list({
         input: params.query,
         ...(params.maxCount != null && { maxCount: params.maxCount }),
       });
-      if (!resp?.data) return [];
+      if (!resp?.data) return { routes: [], limitExceeded: false };
       const agencyMap = new Map(resp.data.references.agencies.map((a) => [a.id, a]));
-      return resp.data.list.map((r) =>
+      const routes = resp.data.list.map((r) =>
         normalizeRoute(r, agencyMap.get(r.agencyId)?.name ?? r.agencyId),
       );
+      return { routes, limitExceeded: resp.data.limitExceeded };
     } catch (err) {
       // OBA returns 404 when no routes match — not a real error, just an empty result.
-      if (err instanceof OnebusawaySDK.NotFoundError) return [];
+      if (err instanceof OnebusawaySDK.NotFoundError) return { routes: [], limitExceeded: false };
       classifyError(err, 'search/route', params.query);
     }
   }
@@ -474,7 +496,7 @@ export class OneBusAwayService {
   async getVehicles(
     params: { agencyId: string; routeId?: string },
     ctx: Context,
-  ): Promise<VehicleEntry[]> {
+  ): Promise<{ vehicles: VehicleEntry[]; limitExceeded: boolean }> {
     ctx.log.debug('getVehicles', { agencyId: params.agencyId });
     try {
       const resp = await this.client.vehiclesForAgency.list(params.agencyId);
@@ -517,7 +539,7 @@ export class OneBusAwayService {
         vehicles = vehicles.filter((v) => v.routeId === params.routeId);
       }
 
-      return vehicles;
+      return { vehicles, limitExceeded: resp.data.limitExceeded };
     } catch (err) {
       classifyError(err, 'agency', params.agencyId, 'agency_not_found');
     }

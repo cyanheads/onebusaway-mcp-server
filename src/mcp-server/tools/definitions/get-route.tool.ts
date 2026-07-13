@@ -5,6 +5,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const getRoute = tool('onebusaway_get_route', {
@@ -55,10 +56,10 @@ export const getRoute = tool('onebusaway_get_route', {
       `**ID:** ${result.id}`,
       `**Agency:** ${result.agencyName} (${result.agencyId})`,
     ];
-    if (result.description) lines.push(`**Description:** ${result.description}`);
+    lines.push(`**Description:** ${orNone(result.description)}`);
     lines.push(`**Type:** ${result.type}`);
-    if (result.color) lines.push(`**Color:** #${result.color}`);
-    if (result.url) lines.push(`**Schedule URL:** ${result.url}`);
+    lines.push(`**Color:** ${orNone(result.color, (c) => `#${c}`)}`);
+    lines.push(`**Schedule URL:** ${orNone(result.url)}`);
     return [{ type: 'text', text: lines.join('\n') }];
   },
 });

@@ -8,6 +8,7 @@ import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAlert } from '@/mcp-server/tools/definitions/get-alert.tool.js';
 import { getBlock } from '@/mcp-server/tools/definitions/get-block.tool.js';
+import { expectContentParity } from './format-parity.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -138,14 +139,31 @@ describe('getAlert', () => {
     expect(text).toContain('stop:1_75403');
     expect(text).toContain('detour');
     expect(text).toContain('1_75404');
+    // Every affects[] sub-field renders, with explicit "none" for absent scopes.
+    expect(text).toContain('agency:none route:1_100259 stop:none trip:none');
+    expectContentParity(blocks, ALERT_FIXTURE);
   });
 
-  it('formats sparse alert — null optional fields omitted', () => {
+  it('renders null optional fields as explicit "none", never omitted or "null"', () => {
     const blocks = getAlert.format!(ALERT_SPARSE);
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('1_sit_002');
     expect(text).toContain('Minor delay');
-    // Null fields should not appear as "null" strings
+    // Each null field is present with an explicit "none" so a content-only client
+    // can tell an absent field from one that simply wasn't rendered.
+    expect(text).toContain('**Description:** none');
+    expect(text).toContain('**Reason:** none');
+    expect(text).toContain('**Severity:** none');
+    expect(text).toContain('**Consequence:** none');
+    expect(text).toContain('**More info:** none');
+    expect(text).not.toContain('null');
+  });
+
+  it('renders a consequence with absent condition/diversionStopIds as explicit "none"', () => {
+    const sparseConsequence = { ...ALERT_FIXTURE, consequences: [{}] };
+    const text = (getAlert.format!(sparseConsequence)[0] as { text: string }).text;
+    expect(text).toContain('- none');
+    expect(text).toContain('Diversion stops: none');
     expect(text).not.toContain('null');
   });
 });
@@ -189,14 +207,19 @@ describe('getBlock', () => {
     expect(text).toContain('1_75403');
     // GTFS seconds-from-midnight: 32400 = 09:00
     expect(text).toContain('09:00');
+    // Empty inactiveServiceIds renders explicitly, matching the activeServiceIds sibling.
+    expect(text).toContain('**Inactive service IDs:** none');
+    expectContentParity(blocks, BLOCK_FIXTURE);
   });
 
-  it('formats sparse block — empty stop times, inactive service IDs', () => {
+  it('formats sparse block — explicit-empty active service IDs, empty stop times', () => {
     const blocks = getBlock.format!(BLOCK_SPARSE);
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('1_block_sparse');
     expect(text).toContain('1_trip_C');
     expect(text).toContain('1_svc_weekend');
+    // Empty activeServiceIds renders explicitly rather than dropping the line.
+    expect(text).toContain('**Active service IDs:** none');
     // No stop times to render — should not crash
     expect(text).not.toContain('undefined');
   });

@@ -20,6 +20,7 @@ import { listAgencies } from '@/mcp-server/tools/definitions/list-agencies.tool.
 import { listRoutesForAgency } from '@/mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
 import { searchStops } from '@/mcp-server/tools/definitions/search-stops.tool.js';
+import { expectContentParity } from './format-parity.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -93,14 +94,8 @@ describe('findStops edge cases', () => {
     expect(text).toContain('40_100002');
   });
 
-  it('handles zero-radius search gracefully', async () => {
-    const ctx = createMockContext();
-    mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
-    const input = findStops.input.parse({ lat: 47.6, lon: -122.3, radius: 0 });
-    const result = await findStops.handler(input, ctx);
-    expect(result.stops).toHaveLength(0);
-    const enrichment = getEnrichment(ctx);
-    expect(enrichment.notice).toMatch(/no stops/i);
+  it('rejects zero-radius search at input validation', () => {
+    expect(() => findStops.input.parse({ lat: 47.6, lon: -122.3, radius: 0 })).toThrow();
   });
 
   it('formats stop with empty routeIds as "none"', () => {
@@ -141,7 +136,7 @@ describe('findStops edge cases', () => {
 // ---- getStop edge cases ----
 
 describe('getStop edge cases', () => {
-  it('formats stop coordinates with 6 decimal precision', () => {
+  it('renders stop coordinates at exact precision, not rounded', () => {
     const stop = {
       id: '1_75403',
       code: '75403',
@@ -152,9 +147,13 @@ describe('getStop edge cases', () => {
       routeIds: [],
       wheelchairBoarding: 'UNKNOWN' as const,
     };
-    const text = (getStop.format!(stop)[0] as { text: string }).text;
-    // toFixed(6) should appear in the output
-    expect(text).toContain('47.658600'); // 47.6586001.toFixed(6) = '47.658600'
+    const content = getStop.format!(stop);
+    const text = (content[0] as { text: string }).text;
+    // The exact structured values must survive into content[]; the old toFixed(6)
+    // would have truncated 47.6586001 to '47.658600', losing the trailing digit.
+    expect(text).toContain('47.6586001');
+    expect(text).toContain('-122.3146123');
+    expectContentParity(content, stop);
   });
 
   it('formats stop with empty direction', () => {
@@ -180,17 +179,20 @@ describe('getStop edge cases', () => {
 describe('listAgencies edge cases', () => {
   it('handles agency with null phone — formats without null string', async () => {
     const ctx = createMockContext();
-    mockService.listAgencies.mockResolvedValue([
-      {
-        id: '1',
-        name: 'Metro Transit',
-        url: 'https://kingcounty.gov/metro',
-        phone: null,
-        timezone: 'America/Los_Angeles',
-        coverageCenter: { lat: 47.6062, lon: -122.3321 },
-        coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
-      },
-    ]);
+    mockService.listAgencies.mockResolvedValue({
+      agencies: [
+        {
+          id: '1',
+          name: 'Metro Transit',
+          url: 'https://kingcounty.gov/metro',
+          phone: null,
+          timezone: 'America/Los_Angeles',
+          coverageCenter: { lat: 47.6062, lon: -122.3321 },
+          coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
+        },
+      ],
+      limitExceeded: false,
+    });
     const input = listAgencies.input.parse({});
     const result = await listAgencies.handler(input, ctx);
     const text = (listAgencies.format!(result)[0] as { text: string }).text;
@@ -200,26 +202,29 @@ describe('listAgencies edge cases', () => {
 
   it('formats multiple agencies in a single output block', async () => {
     const ctx = createMockContext();
-    mockService.listAgencies.mockResolvedValue([
-      {
-        id: '1',
-        name: 'Metro Transit',
-        url: 'https://kingcounty.gov/metro',
-        phone: '206-553-3000',
-        timezone: 'America/Los_Angeles',
-        coverageCenter: { lat: 47.6062, lon: -122.3321 },
-        coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
-      },
-      {
-        id: '40',
-        name: 'Sound Transit',
-        url: 'https://soundtransit.org',
-        phone: null,
-        timezone: 'America/Los_Angeles',
-        coverageCenter: { lat: 47.5, lon: -122.2 },
-        coverageSpan: { latSpan: 1.0, lonSpan: 1.5 },
-      },
-    ]);
+    mockService.listAgencies.mockResolvedValue({
+      agencies: [
+        {
+          id: '1',
+          name: 'Metro Transit',
+          url: 'https://kingcounty.gov/metro',
+          phone: '206-553-3000',
+          timezone: 'America/Los_Angeles',
+          coverageCenter: { lat: 47.6062, lon: -122.3321 },
+          coverageSpan: { latSpan: 0.5, lonSpan: 0.8 },
+        },
+        {
+          id: '40',
+          name: 'Sound Transit',
+          url: 'https://soundtransit.org',
+          phone: null,
+          timezone: 'America/Los_Angeles',
+          coverageCenter: { lat: 47.5, lon: -122.2 },
+          coverageSpan: { latSpan: 1.0, lonSpan: 1.5 },
+        },
+      ],
+      limitExceeded: false,
+    });
     const input = listAgencies.input.parse({});
     const result = await listAgencies.handler(input, ctx);
     expect(result.agencies).toHaveLength(2);
@@ -396,7 +401,9 @@ describe('getVehicles edge cases', () => {
       nextStop: '1_75403',
       predicted: true,
     };
-    const text = (getVehicles.format!({ vehicles: [veryLate] })[0] as { text: string }).text;
+    const text = (
+      getVehicles.format!({ vehicles: [veryLate], limitExceeded: false })[0] as { text: string }
+    ).text;
     expect(text).toContain('60 min late');
   });
 
@@ -429,7 +436,9 @@ describe('getVehicles edge cases', () => {
       nextStop: '1_75500',
       predicted: true,
     };
-    const text = (getVehicles.format!({ vehicles: [v1, v2] })[0] as { text: string }).text;
+    const text = (
+      getVehicles.format!({ vehicles: [v1, v2], limitExceeded: false })[0] as { text: string }
+    ).text;
     expect(text).toContain('bus_001');
     expect(text).toContain('bus_002');
     expect(text).toContain('early');
@@ -450,7 +459,9 @@ describe('getVehicles edge cases', () => {
       nextStop: null,
       predicted: false,
     };
-    const text = (getVehicles.format!({ vehicles: [v] })[0] as { text: string }).text;
+    const text = (
+      getVehicles.format!({ vehicles: [v], limitExceeded: false })[0] as { text: string }
+    ).text;
     expect(text).toContain('early');
     expect(text).toContain('bus_100');
   });
@@ -482,11 +493,12 @@ describe('getTrip edge cases', () => {
     expect(text).toContain('sit_2');
   });
 
-  it('formats trip with null position', () => {
+  it('renders null status fields as explicit "none", never omitted or "null"', () => {
     const noPos = {
       tripId: 'trip_abc',
       routeShortName: '44',
       tripHeadsign: 'Downtown',
+      blockId: null,
       status: {
         phase: 'layover_before',
         predicted: false,
@@ -502,6 +514,13 @@ describe('getTrip edge cases', () => {
     };
     const text = (getTrip.format!(noPos)[0] as { text: string }).text;
     expect(text).toContain('trip_abc');
+    // Absent optional fields are explicit, so a content-only client can tell
+    // "no data" from a missing line — rendered as "none", never "null".
+    expect(text).toContain('**Block:** none');
+    expect(text).toContain('**Vehicle:** none');
+    expect(text).toContain('**Position:** none');
+    expect(text).toContain('**Next stop:** none');
+    expect(text).toContain('**Closest stop:** none');
     expect(text).not.toContain('undefined');
     expect(text).not.toContain('null');
   });
@@ -819,7 +838,7 @@ describe('getScheduleForRoute edge cases', () => {
 describe('searchStops edge cases', () => {
   it('passes maxCount to service', async () => {
     const ctx = createMockContext();
-    mockService.searchStops.mockResolvedValue([]);
+    mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = searchStops.input.parse({ query: 'University', maxCount: 3 });
     await searchStops.handler(input, ctx);
     expect(mockService.searchStops).toHaveBeenCalledWith(
@@ -851,7 +870,7 @@ describe('searchStops edge cases', () => {
         wheelchairBoarding: 'UNKNOWN' as const,
       },
     ];
-    const text = (searchStops.format!({ stops })[0] as { text: string }).text;
+    const text = (searchStops.format!({ stops, limitExceeded: false })[0] as { text: string }).text;
     expect(text).toContain('1_75403');
     expect(text).toContain('1_75404');
     expect(text).toContain('2');
@@ -863,7 +882,7 @@ describe('searchStops edge cases', () => {
 describe('searchRoutes edge cases', () => {
   it('passes maxCount to service', async () => {
     const ctx = createMockContext();
-    mockService.searchRoutes.mockResolvedValue([]);
+    mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = searchRoutes.input.parse({ query: '44', maxCount: 5 });
     await searchRoutes.handler(input, ctx);
     expect(mockService.searchRoutes).toHaveBeenCalledWith(
@@ -882,7 +901,9 @@ describe('searchRoutes edge cases', () => {
       agencyName: 'Metro Transit',
       type: 3,
     };
-    const text = (searchRoutes.format!({ routes: [routeNoDesc] })[0] as { text: string }).text;
+    const text = (
+      searchRoutes.format!({ routes: [routeNoDesc], limitExceeded: false })[0] as { text: string }
+    ).text;
     expect(text).toContain('1_100259');
     expect(text).not.toContain('undefined');
   });
@@ -901,8 +922,11 @@ describe('listRoutesForAgency edge cases', () => {
       color: 'FF6600',
       url: 'https://example.com/route/44',
     };
-    const text = (listRoutesForAgency.format!({ routes: [routeWithColor] })[0] as { text: string })
-      .text;
+    const text = (
+      listRoutesForAgency.format!({ routes: [routeWithColor], limitExceeded: false })[0] as {
+        text: string;
+      }
+    ).text;
     expect(text).toContain('#FF6600');
     expect(text).toContain('https://example.com/route/44');
   });
@@ -918,7 +942,7 @@ describe('listRoutesForAgency edge cases', () => {
       color: null,
       url: null,
     }));
-    mockService.listRoutesForAgency.mockResolvedValue(routes);
+    mockService.listRoutesForAgency.mockResolvedValue({ routes, limitExceeded: false });
     const input = listRoutesForAgency.input.parse({ agencyId: '1' });
     const result = await listRoutesForAgency.handler(input, ctx);
     expect(result.routes).toHaveLength(100);
@@ -945,7 +969,9 @@ describe('findRoutes edge cases', () => {
       color: '0073CF',
       url: 'https://metro.kingcounty.gov/schedules/044',
     };
-    const text = (findRoutes.format!({ routes: [routeWithUrl] })[0] as { text: string }).text;
+    const text = (
+      findRoutes.format!({ routes: [routeWithUrl], limitExceeded: false })[0] as { text: string }
+    ).text;
     expect(text).toContain('#0073CF');
     expect(text).toContain('https://metro.kingcounty.gov/schedules/044');
   });
@@ -962,7 +988,9 @@ describe('findRoutes edge cases', () => {
       color: null,
       url: null,
     };
-    const text = (findRoutes.format!({ routes: [ferry] })[0] as { text: string }).text;
+    const text = (
+      findRoutes.format!({ routes: [ferry], limitExceeded: false })[0] as { text: string }
+    ).text;
     expect(text).toContain('Bainbridge');
     expect(text).toContain('4');
   });

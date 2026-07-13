@@ -5,6 +5,7 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { coords, EMPTY, orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 /** Format Unix milliseconds as HH:MM. */
@@ -73,6 +74,11 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
           .describe('A real-time vehicle position entry.'),
       )
       .describe('Active vehicles for the agency, optionally filtered by route.'),
+    limitExceeded: z
+      .boolean()
+      .describe(
+        'True if the upstream capped the vehicle list — some vehicles were omitted. This endpoint has no pagination to retrieve them.',
+      ),
   }),
   errors: [
     {
@@ -97,46 +103,62 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
   },
 
   async handler(input, ctx) {
-    const vehicles = await getOneBusAwayService().getVehicles(
+    const result = await getOneBusAwayService().getVehicles(
       {
         agencyId: input.agencyId,
         ...(input.routeId && { routeId: input.routeId }),
       },
       ctx,
     );
-    ctx.log.info('getVehicles completed', { agencyId: input.agencyId, count: vehicles.length });
+    ctx.log.info('getVehicles completed', {
+      agencyId: input.agencyId,
+      count: result.vehicles.length,
+      limitExceeded: result.limitExceeded,
+    });
 
     ctx.enrich({
       agencyId: input.agencyId,
       ...(input.routeId && { routeId: input.routeId }),
-      count: vehicles.length,
+      count: result.vehicles.length,
     });
-    if (vehicles.length === 0) {
+    if (result.vehicles.length === 0) {
       ctx.enrich.notice(
         input.routeId
           ? `No active vehicles found on route ${input.routeId}. The route may not be currently running or may not have real-time data.`
           : `No active vehicles found for agency ${input.agencyId}. Vehicles may not be running at this time.`,
       );
+    } else if (result.limitExceeded) {
+      ctx.enrich.notice(
+        'Results truncated upstream — some active vehicles were omitted; this endpoint has no pagination to retrieve the rest.',
+      );
     }
 
-    return { vehicles };
+    return { vehicles: result.vehicles, limitExceeded: result.limitExceeded };
   },
 
   format: (result) => {
-    if (result.vehicles.length === 0) {
-      return [{ type: 'text', text: 'No active vehicles found.' }];
+    const lines: string[] = [
+      `**Active vehicles:** ${result.vehicles.length} | **Limit exceeded:** ${result.limitExceeded}`,
+    ];
+    if (result.limitExceeded) {
+      lines.push('> Results truncated upstream — some vehicles omitted (no pagination available).');
     }
-    const lines: string[] = [`**Active vehicles:** ${result.vehicles.length}`];
+    if (result.vehicles.length === 0) {
+      lines.push('No active vehicles found.');
+      return [{ type: 'text', text: lines.join('\n') }];
+    }
     for (const v of result.vehicles) {
       lines.push(`\n## Vehicle ${v.vehicleId}`);
-      if (v.routeShortName) {
-        lines.push(`**Route:** ${v.routeShortName}${v.tripHeadsign ? ` → ${v.tripHeadsign}` : ''}`);
-      }
-      if (v.routeId) lines.push(`**Route ID:** ${v.routeId}`);
-      if (v.tripId) lines.push(`**Trip ID:** ${v.tripId}`);
-      lines.push(`**Position:** ${v.position.lat.toFixed(5)}, ${v.position.lon.toFixed(5)}`);
+      lines.push(
+        `**Route:** ${orNone(v.routeShortName)}${v.tripHeadsign ? ` → ${v.tripHeadsign}` : ''}`,
+      );
+      lines.push(`**Route ID:** ${orNone(v.routeId)}`);
+      lines.push(`**Trip ID:** ${orNone(v.tripId)}`);
+      lines.push(`**Position:** ${coords(v.position.lat, v.position.lon)}`);
       lines.push(`**Phase:** ${v.phase} | **Predicted:** ${v.predicted}`);
-      if (v.scheduleDeviation != null) {
+      if (v.scheduleDeviation == null) {
+        lines.push(`**Schedule deviation:** ${EMPTY}`);
+      } else {
         const devLabel =
           v.scheduleDeviation === 0
             ? 'on time'
@@ -145,8 +167,8 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
               : `${Math.round(Math.abs(v.scheduleDeviation) / 60)} min early`;
         lines.push(`**Schedule deviation:** ${devLabel} (${v.scheduleDeviation}s)`);
       }
-      if (v.orientation != null) lines.push(`**Heading:** ${v.orientation}°`);
-      if (v.nextStop) lines.push(`**Next stop:** ${v.nextStop}`);
+      lines.push(`**Heading:** ${orNone(v.orientation, (o) => `${o}°`)}`);
+      lines.push(`**Next stop:** ${orNone(v.nextStop)}`);
       lines.push(`**Last update:** ${fmtTime(v.lastUpdateTime)} (${v.lastUpdateTime})`);
     }
     return [{ type: 'text', text: lines.join('\n') }];

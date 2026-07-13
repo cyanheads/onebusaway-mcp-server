@@ -430,6 +430,7 @@ describe('route short name resolution skips empty shortName (#23)', () => {
   it('getVehicles: empty route shortName falls through to nullSafeShortName', async () => {
     h.methods.vehiclesForAgency.list.mockResolvedValue({
       data: {
+        limitExceeded: false,
         references: {
           trips: [{ id: '1_trip_a', routeId: '1_100210' }],
           routes: [{ id: '1_100210', shortName: '', nullSafeShortName: '36' }],
@@ -446,7 +447,7 @@ describe('route short name resolution skips empty shortName (#23)', () => {
       },
     });
     const result = await getOneBusAwayService().getVehicles({ agencyId: '1' }, ctx);
-    expect(result[0]?.routeShortName).toBe('36');
+    expect(result.vehicles[0]?.routeShortName).toBe('36');
   });
 
   it('getScheduleForStop: empty route shortName falls through to nullSafeShortName', async () => {
@@ -474,5 +475,77 @@ describe('route short name resolution skips empty shortName (#23)', () => {
     });
     const result = await getOneBusAwayService().getScheduleForStop({ stopId: '1_75403' }, ctx);
     expect(result.routes[0]?.routeShortName).toBe('36');
+  });
+});
+
+// ---- #18: collection methods propagate the upstream limitExceeded flag ----
+
+describe('limitExceeded propagation (#18)', () => {
+  it('listAgencies surfaces limitExceeded from the SDK response', async () => {
+    h.methods.agenciesWithCoverage.list.mockResolvedValue({
+      data: { limitExceeded: true, list: [], references: { agencies: [] } },
+    });
+    const result = await getOneBusAwayService().listAgencies(ctx);
+    expect(result.limitExceeded).toBe(true);
+    expect(result.agencies).toEqual([]);
+  });
+
+  it('findRoutes surfaces limitExceeded from the SDK response', async () => {
+    h.methods.routesForLocation.list.mockResolvedValue({
+      data: { limitExceeded: true, list: [], references: { agencies: [] } },
+    });
+    const result = await getOneBusAwayService().findRoutes({ lat: 47.6, lon: -122.3 }, ctx);
+    expect(result.limitExceeded).toBe(true);
+    expect(result.routes).toEqual([]);
+  });
+
+  it('searchStops surfaces limitExceeded from the SDK response', async () => {
+    h.methods.searchForStop.list.mockResolvedValue({
+      data: { limitExceeded: true, list: [] },
+    });
+    const result = await getOneBusAwayService().searchStops({ query: 'x' }, ctx);
+    expect(result.limitExceeded).toBe(true);
+    expect(result.stops).toEqual([]);
+  });
+
+  it('searchRoutes surfaces limitExceeded from the SDK response', async () => {
+    h.methods.searchForRoute.list.mockResolvedValue({
+      data: { limitExceeded: true, list: [], references: { agencies: [] } },
+    });
+    const result = await getOneBusAwayService().searchRoutes({ query: 'x' }, ctx);
+    expect(result.limitExceeded).toBe(true);
+    expect(result.routes).toEqual([]);
+  });
+
+  it('listRoutesForAgency surfaces limitExceeded from the SDK response', async () => {
+    h.methods.routesForAgency.list.mockResolvedValue({
+      data: { limitExceeded: true, list: [], references: { agencies: [] } },
+    });
+    const result = await getOneBusAwayService().listRoutesForAgency('1', ctx);
+    expect(result.limitExceeded).toBe(true);
+    expect(result.routes).toEqual([]);
+  });
+
+  it('getVehicles surfaces limitExceeded from the SDK response', async () => {
+    h.methods.vehiclesForAgency.list.mockResolvedValue({
+      data: { limitExceeded: true, list: [], references: { trips: [], routes: [] } },
+    });
+    const result = await getOneBusAwayService().getVehicles({ agencyId: '1' }, ctx);
+    expect(result.limitExceeded).toBe(true);
+    expect(result.vehicles).toEqual([]);
+  });
+
+  it('searchStops returns limitExceeded=false on the 404 empty path', async () => {
+    h.methods.searchForStop.list.mockRejectedValue(new h.NotFoundError('404 Not Found'));
+    const result = await getOneBusAwayService().searchStops({ query: 'nope' }, ctx);
+    expect(result.limitExceeded).toBe(false);
+    expect(result.stops).toEqual([]);
+  });
+
+  it('searchRoutes returns limitExceeded=false on the 404 empty path', async () => {
+    h.methods.searchForRoute.list.mockRejectedValue(new h.NotFoundError('404 Not Found'));
+    const result = await getOneBusAwayService().searchRoutes({ query: 'nope' }, ctx);
+    expect(result.limitExceeded).toBe(false);
+    expect(result.routes).toEqual([]);
   });
 });
