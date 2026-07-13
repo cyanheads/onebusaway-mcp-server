@@ -97,6 +97,11 @@ describe('getArrivals error contracts', () => {
     const input = getArrivals.input.parse({ stopId: '1_75403' });
     await expect(getArrivals.handler(input, ctx)).rejects.toThrow();
   });
+
+  it('declares rate_limited as non-retryable — a shared upstream budget should not be auto-retried', () => {
+    const entry = getArrivals.errors?.find((e) => e.reason === 'rate_limited');
+    expect(entry?.retryable).toBe(false);
+  });
 });
 
 // ---- getTrip error contracts ----

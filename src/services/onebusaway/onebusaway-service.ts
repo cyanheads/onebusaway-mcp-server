@@ -83,6 +83,35 @@ function normalizeRoute(
   };
 }
 
+/**
+ * Discovery guidance surfaced on not-found errors as `data.recovery.hint`, keyed
+ * by contract reason. The not-found error is the moment a caller is provably
+ * holding a bad ID, so the pointer to the tool that yields a valid one belongs
+ * here — on the error path where the misuse surfaces — not only in the tool
+ * description. The framework mirrors `data.recovery.hint` into the client's text
+ * surface automatically.
+ */
+const NOT_FOUND_HINTS: Record<string, string> = {
+  stop_not_found:
+    'Stop IDs come from onebusaway_search_stops or onebusaway_find_stops, in {agencyId}_{localId} format (e.g. "1_75403").',
+  route_not_found:
+    'Route IDs come from onebusaway_search_routes or onebusaway_list_routes_for_agency — a route ID is not the short name shown on the vehicle (e.g. "44").',
+  agency_not_found:
+    'Agency IDs are numeric and come from onebusaway_list_agencies; an agency name is not accepted.',
+  trip_not_found: 'A tripId comes from onebusaway_get_arrivals — each arrival carries its tripId.',
+  block_not_found: 'A blockId comes from onebusaway_get_trip — the trip carries its blockId.',
+  situation_not_found: 'A situationId comes from onebusaway_get_arrivals (situations[].id).',
+};
+
+/**
+ * Builds the `data` payload for a not-found error: the offending id, the contract
+ * reason, and — when one is registered for the reason — the discovery hint.
+ */
+function notFoundData(id: string, reason: string): Record<string, unknown> {
+  const hint = NOT_FOUND_HINTS[reason];
+  return { id, reason, ...(hint && { recovery: { hint } }) };
+}
+
 /** Classifies SDK errors to McpError subclasses. Re-throws McpErrors as-is. */
 function classifyError(
   err: unknown,
@@ -92,15 +121,15 @@ function classifyError(
 ): never {
   if (err instanceof McpError) throw err;
   if (err instanceof OnebusawaySDK.NotFoundError) {
-    throw notFound(`${entityType} "${entityId}" not found.`, {
-      id: entityId,
-      ...(notFoundReason && { reason: notFoundReason }),
-    });
+    throw notFound(
+      `${entityType} "${entityId}" not found.`,
+      notFoundReason ? notFoundData(entityId, notFoundReason) : { id: entityId },
+    );
   }
   if (err instanceof OnebusawaySDK.RateLimitError) {
     throw rateLimited(
-      'OneBusAway rate limit reached. The Puget Sound instance enforces ~20 req/min per IP.',
-      { reason: 'rate_limited' },
+      'OneBusAway rate limit reached. A single upstream API key is shared across all callers, so the ~20 req/min limit is a global budget, not a per-caller quota — retrying will not clear it any faster.',
+      { reason: 'rate_limited', retryable: false },
     );
   }
   if (err instanceof OnebusawaySDK.APIConnectionError) {
@@ -120,7 +149,7 @@ export class OneBusAwayService {
     this.client = new OnebusawaySDK({
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
-      maxRetries: 0, // framework withRetry handles retries
+      maxRetries: 0, // one tool call = one upstream request; nothing wraps these calls in withRetry
     });
   }
 
@@ -130,6 +159,7 @@ export class OneBusAwayService {
     ctx.log.debug('listAgencies');
     try {
       const resp = await this.client.agenciesWithCoverage.list();
+      if (!resp?.data) throw serviceUnavailable('OneBusAway returned no agency-coverage data.');
       const refs = resp.data.references;
       const agencyMap = new Map(refs.agencies.map((a) => [a.id, a]));
 
@@ -164,6 +194,8 @@ export class OneBusAwayService {
         ...(params.radius != null && { radius: params.radius }),
         ...(params.query && { query: params.query }),
       });
+      if (!resp?.data)
+        throw serviceUnavailable('OneBusAway returned no data for the stops-for-location query.');
       return {
         stops: resp.data.list.map(normalizeStop),
         limitExceeded: resp.data.limitExceeded,
@@ -178,7 +210,7 @@ export class OneBusAwayService {
     try {
       const resp = await this.client.stop.retrieve(stopId);
       if (!resp?.data?.entry)
-        throw notFound(`stop "${stopId}" not found.`, { id: stopId, reason: 'stop_not_found' });
+        throw notFound(`stop "${stopId}" not found.`, notFoundData(stopId, 'stop_not_found'));
       return normalizeStop(resp.data.entry);
     } catch (err) {
       classifyError(err, 'stop', stopId, 'stop_not_found');
@@ -215,6 +247,8 @@ export class OneBusAwayService {
         ...(params.radius != null && { radius: params.radius }),
         ...(params.query && { query: params.query }),
       });
+      if (!resp?.data)
+        throw serviceUnavailable('OneBusAway returned no data for the routes-for-location query.');
       const agencyMap = new Map(resp.data.references.agencies.map((a) => [a.id, a]));
       return resp.data.list.map((r) =>
         normalizeRoute(r, agencyMap.get(r.agencyId)?.name ?? r.agencyId),
@@ -228,6 +262,8 @@ export class OneBusAwayService {
     ctx.log.debug('getRoute', { routeId });
     try {
       const resp = await this.client.route.retrieve(routeId);
+      if (!resp?.data)
+        throw notFound(`route "${routeId}" not found.`, notFoundData(routeId, 'route_not_found'));
       const refs = resp.data.references;
       const agencyMap = new Map(refs.agencies.map((a) => [a.id, a]));
       const r = resp.data.entry;
@@ -242,10 +278,10 @@ export class OneBusAwayService {
     try {
       const resp = await this.client.routesForAgency.list(agencyId);
       if (!resp?.data)
-        throw notFound(`agency "${agencyId}" not found.`, {
-          id: agencyId,
-          reason: 'agency_not_found',
-        });
+        throw notFound(
+          `agency "${agencyId}" not found.`,
+          notFoundData(agencyId, 'agency_not_found'),
+        );
       // routes-for-agency references block may not include the agency itself
       const agencyName =
         resp.data.references.agencies.find((a) => a.id === agencyId)?.name ?? agencyId;
@@ -286,6 +322,11 @@ export class OneBusAwayService {
         ...(params.minutesBefore != null && { minutesBefore: params.minutesBefore }),
         ...(params.minutesAfter != null && { minutesAfter: params.minutesAfter }),
       });
+      if (!resp?.data)
+        throw notFound(
+          `stop "${params.stopId}" not found.`,
+          notFoundData(params.stopId, 'stop_not_found'),
+        );
       const refs = resp.data.references;
       const routeMap = new Map(refs.routes.map((r) => [r.id, r]));
       const stopMap = new Map(refs.stops.map((s) => [s.id, s]));
@@ -355,6 +396,11 @@ export class OneBusAwayService {
         ...(params.serviceDate != null && { serviceDate: params.serviceDate }),
         includeSchedule: params.includeSchedule ?? true,
       });
+      if (!resp?.data)
+        throw notFound(
+          `trip "${params.tripId}" not found.`,
+          notFoundData(params.tripId, 'trip_not_found'),
+        );
       const refs = resp.data.references;
       const entry = resp.data.entry;
       const tripRef = refs.trips.find((t) => t.id === params.tripId);
@@ -410,6 +456,11 @@ export class OneBusAwayService {
     ctx.log.debug('getVehicles', { agencyId: params.agencyId });
     try {
       const resp = await this.client.vehiclesForAgency.list(params.agencyId);
+      if (!resp?.data)
+        throw notFound(
+          `agency "${params.agencyId}" not found.`,
+          notFoundData(params.agencyId, 'agency_not_found'),
+        );
       const refs = resp.data.references;
       const tripMap = new Map(refs.trips.map((t) => [t.id, t]));
       const routeMap = new Map(refs.routes.map((r) => [r.id, r]));
@@ -461,6 +512,11 @@ export class OneBusAwayService {
       const resp = await this.client.scheduleForStop.retrieve(params.stopId, {
         ...(params.date && { date: params.date }),
       });
+      if (!resp?.data)
+        throw notFound(
+          `stop "${params.stopId}" not found.`,
+          notFoundData(params.stopId, 'stop_not_found'),
+        );
       const refs = resp.data.references;
       const routeMap = new Map(refs.routes.map((r) => [r.id, r]));
       const entry = resp.data.entry;
@@ -501,6 +557,11 @@ export class OneBusAwayService {
       const resp = await this.client.scheduleForRoute.retrieve(params.routeId, {
         ...(params.date && { date: params.date }),
       });
+      if (!resp?.data)
+        throw notFound(
+          `route "${params.routeId}" not found.`,
+          notFoundData(params.routeId, 'route_not_found'),
+        );
       const entry = resp.data.entry;
       const stopMap = new Map((entry.stops ?? []).map((s) => [s.id, s]));
 
@@ -589,12 +650,17 @@ export class OneBusAwayService {
         }
       >(`/api/where/situation/${situationId}.json`);
 
+      if (!resp?.data)
+        throw notFound(
+          `situation "${situationId}" not found.`,
+          notFoundData(situationId, 'situation_not_found'),
+        );
       const entry = resp.data.entry;
       if (!entry)
-        throw notFound(`situation "${situationId}" not found.`, {
-          id: situationId,
-          reason: 'situation_not_found',
-        });
+        throw notFound(
+          `situation "${situationId}" not found.`,
+          notFoundData(situationId, 'situation_not_found'),
+        );
 
       return {
         id: entry.id,
@@ -629,12 +695,14 @@ export class OneBusAwayService {
     ctx.log.debug('getBlock', { blockId });
     try {
       const resp = await this.client.block.retrieve(blockId);
+      if (!resp?.data)
+        throw notFound(`block "${blockId}" not found.`, notFoundData(blockId, 'block_not_found'));
       const entry = resp.data.entry;
       const configurations = entry?.configurations ?? [];
       // block endpoint returns an empty-ish entry (no configurations) when not found
       const config = configurations[0];
       if (!config) {
-        throw notFound(`block "${blockId}" not found.`, { id: blockId, reason: 'block_not_found' });
+        throw notFound(`block "${blockId}" not found.`, notFoundData(blockId, 'block_not_found'));
       }
 
       return {

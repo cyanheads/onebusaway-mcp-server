@@ -118,9 +118,10 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
     {
       reason: 'rate_limited',
       code: JsonRpcErrorCode.RateLimited,
-      retryable: true,
+      retryable: false,
       when: 'API returned a rate limit response.',
-      recovery: 'Wait a moment and retry; the Puget Sound instance enforces ~20 req/min per IP.',
+      recovery:
+        'Wait for the shared upstream budget to clear before retrying; one API key is shared across all callers, so the ~20 req/min limit is a global ceiling, not a per-caller quota.',
     },
   ],
 
