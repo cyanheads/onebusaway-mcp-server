@@ -3,10 +3,11 @@
  * @module tests/tools/vehicles.tool.test
  */
 
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getVehicles } from '@/mcp-server/tools/definitions/get-vehicles.tool.js';
 import { expectContentParity } from './format-parity.helper.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -40,7 +41,7 @@ const VEHICLE_FIXTURE = {
 
 describe('getVehicles', () => {
   it('returns active vehicles with limitExceeded flag', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({
       vehicles: [VEHICLE_FIXTURE],
       limitExceeded: false,
@@ -53,7 +54,7 @@ describe('getVehicles', () => {
   });
 
   it('enriches with agencyId and count', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({
       vehicles: [VEHICLE_FIXTURE],
       limitExceeded: false,
@@ -67,7 +68,7 @@ describe('getVehicles', () => {
   });
 
   it('enriches with routeId when filter provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({
       vehicles: [VEHICLE_FIXTURE],
       limitExceeded: false,
@@ -79,7 +80,7 @@ describe('getVehicles', () => {
   });
 
   it('enriches with notice when no vehicles found', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({ vehicles: [], limitExceeded: false });
     const input = getVehicles.input.parse({ agencyId: '1' });
     await getVehicles.handler(input, ctx);
@@ -89,7 +90,7 @@ describe('getVehicles', () => {
   });
 
   it('enriches with truncation notice when limitExceeded', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({ vehicles: [VEHICLE_FIXTURE], limitExceeded: true });
     const input = getVehicles.input.parse({ agencyId: '1' });
     await getVehicles.handler(input, ctx);
@@ -98,7 +99,7 @@ describe('getVehicles', () => {
   });
 
   it('passes optional routeId to service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({ vehicles: [], limitExceeded: false });
     const input = getVehicles.input.parse({ agencyId: '1', routeId: '1_100259' });
     await getVehicles.handler(input, ctx);
@@ -109,7 +110,7 @@ describe('getVehicles', () => {
   });
 
   it('omits empty routeId from service call', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({ vehicles: [], limitExceeded: false });
     const input = getVehicles.input.parse({ agencyId: '1', routeId: '' });
     await getVehicles.handler(input, ctx);
@@ -120,7 +121,7 @@ describe('getVehicles', () => {
   });
 
   it('propagates service errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockRejectedValue(new Error('agency not found'));
     const input = getVehicles.input.parse({ agencyId: 'bad' });
     await expect(getVehicles.handler(input, ctx)).rejects.toThrow();

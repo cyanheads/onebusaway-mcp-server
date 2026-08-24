@@ -117,6 +117,17 @@ const NOT_FOUND_HINTS: Record<string, string> = {
   situation_not_found: 'A situationId comes from onebusaway_get_arrivals (situations[].id).',
 };
 
+/** OneBusAway schedule fields returned in production but omitted from SDK 1.20's generated type. */
+type ScheduleRouteEntryExtension = {
+  stops?: Array<{ id: string; name: string }>;
+  trips?: Array<{
+    id: string;
+    tripHeadsign?: string;
+    serviceId: string;
+    routeShortName?: string;
+  }>;
+};
+
 /**
  * Builds the `data` payload for a not-found error: the offending id, the contract
  * reason, and — when one is registered for the reason — the discovery hint.
@@ -189,7 +200,7 @@ export class OneBusAwayService {
           coverageSpan: { latSpan: item.latSpan, lonSpan: item.lonSpan },
         };
       });
-      return { agencies, limitExceeded: resp.data.limitExceeded };
+      return { agencies, limitExceeded: resp.data.limitExceeded ?? false };
     } catch (err) {
       classifyError(err, 'agencies', 'list');
     }
@@ -213,7 +224,7 @@ export class OneBusAwayService {
         throw serviceUnavailable('OneBusAway returned no data for the stops-for-location query.');
       return {
         stops: resp.data.list.map(normalizeStop),
-        limitExceeded: resp.data.limitExceeded,
+        limitExceeded: resp.data.limitExceeded ?? false,
       };
     } catch (err) {
       classifyError(err, 'stops-for-location', 'query');
@@ -243,7 +254,10 @@ export class OneBusAwayService {
         ...(params.maxCount != null && { maxCount: params.maxCount }),
       });
       if (!resp?.data) return { stops: [], limitExceeded: false };
-      return { stops: resp.data.list.map(normalizeStop), limitExceeded: resp.data.limitExceeded };
+      return {
+        stops: resp.data.list.map(normalizeStop),
+        limitExceeded: resp.data.limitExceeded ?? false,
+      };
     } catch (err) {
       // OBA returns 404 when no stops match — not a real error, just an empty result.
       if (err instanceof OnebusawaySDK.NotFoundError) return { stops: [], limitExceeded: false };
@@ -280,7 +294,7 @@ export class OneBusAwayService {
       const routes = resp.data.list.map((r) =>
         normalizeRoute(r, agencyMap.get(r.agencyId)?.name ?? r.agencyId),
       );
-      return { routes, limitExceeded: resp.data.limitExceeded };
+      return { routes, limitExceeded: resp.data.limitExceeded ?? false };
     } catch (err) {
       classifyError(err, 'routes-for-location', 'query');
     }
@@ -317,7 +331,7 @@ export class OneBusAwayService {
       const agencyName =
         resp.data.references.agencies.find((a) => a.id === agencyId)?.name ?? agencyId;
       const routes = resp.data.list.map((r) => normalizeRoute(r, agencyName));
-      return { routes, limitExceeded: resp.data.limitExceeded };
+      return { routes, limitExceeded: resp.data.limitExceeded ?? false };
     } catch (err) {
       classifyError(err, 'agency', agencyId, 'agency_not_found');
     }
@@ -338,7 +352,7 @@ export class OneBusAwayService {
       const routes = resp.data.list.map((r) =>
         normalizeRoute(r, agencyMap.get(r.agencyId)?.name ?? r.agencyId),
       );
-      return { routes, limitExceeded: resp.data.limitExceeded };
+      return { routes, limitExceeded: resp.data.limitExceeded ?? false };
     } catch (err) {
       // OBA returns 404 when no routes match — not a real error, just an empty result.
       if (err instanceof OnebusawaySDK.NotFoundError) return { routes: [], limitExceeded: false };
@@ -509,37 +523,40 @@ export class OneBusAwayService {
       const tripMap = new Map(refs.trips.map((t) => [t.id, t]));
       const routeMap = new Map(refs.routes.map((r) => [r.id, r]));
 
-      let vehicles = resp.data.list
-        .filter((v) => v.location != null)
-        .map((v): VehicleEntry => {
-          const tripRef = tripMap.get(v.tripId);
-          const routeId = v.tripStatus?.activeTripId
-            ? (tripMap.get(v.tripStatus.activeTripId)?.routeId ?? tripRef?.routeId ?? null)
-            : (tripRef?.routeId ?? null);
-          const routeRef = routeId ? routeMap.get(routeId) : null;
+      let vehicles = resp.data.list.flatMap((v): VehicleEntry[] => {
+        const location = v.location;
+        if (location?.lat == null || location.lon == null) return [];
 
-          return {
+        const tripRef = v.tripId ? tripMap.get(v.tripId) : undefined;
+        const routeId = v.tripStatus?.activeTripId
+          ? (tripMap.get(v.tripStatus.activeTripId)?.routeId ?? tripRef?.routeId ?? null)
+          : (tripRef?.routeId ?? null);
+        const routeRef = routeId ? routeMap.get(routeId) : null;
+
+        return [
+          {
             vehicleId: v.vehicleId,
             tripId: v.tripId || null,
             routeId,
             routeShortName: firstNonEmpty(routeRef?.shortName, routeRef?.nullSafeShortName) || null,
             tripHeadsign: tripRef?.tripHeadsign ?? null,
-            position: { lat: v.location.lat ?? 0, lon: v.location.lon ?? 0 },
+            position: { lat: location.lat, lon: location.lon },
             lastUpdateTime: v.lastUpdateTime,
             phase: v.tripStatus?.phase ?? 'unknown',
             scheduleDeviation: v.tripStatus?.scheduleDeviation ?? null,
             orientation: v.tripStatus?.orientation ?? null,
             nextStop: v.tripStatus?.nextStop ?? null,
             predicted: v.tripStatus?.predicted ?? false,
-          };
-        });
+          },
+        ];
+      });
 
       // Client-side route filter
       if (params.routeId) {
         vehicles = vehicles.filter((v) => v.routeId === params.routeId);
       }
 
-      return { vehicles, limitExceeded: resp.data.limitExceeded };
+      return { vehicles, limitExceeded: resp.data.limitExceeded ?? false };
     } catch (err) {
       classifyError(err, 'agency', params.agencyId, 'agency_not_found');
     }
@@ -610,7 +627,7 @@ export class OneBusAwayService {
           `route "${params.routeId}" not found.`,
           notFoundData(params.routeId, 'route_not_found'),
         );
-      const entry = resp.data.entry;
+      const entry = resp.data.entry as typeof resp.data.entry & ScheduleRouteEntryExtension;
       const stopMap = new Map((entry.stops ?? []).map((s) => [s.id, s]));
       const groupings = entry.stopTripGroupings ?? [];
 
@@ -660,7 +677,7 @@ export class OneBusAwayService {
       }
 
       // Route short name is only carried on entry.trips; fall back to the route ID when it's empty.
-      const routeShortName = entryTrips[0]?.routeShortName ?? entry.routeId;
+      const routeShortName = firstNonEmpty(entryTrips[0]?.routeShortName, entry.routeId);
 
       return {
         routeId: entry.routeId,

@@ -450,6 +450,36 @@ describe('route short name resolution skips empty shortName (#23)', () => {
     expect(result.vehicles[0]?.routeShortName).toBe('36');
   });
 
+  it('getVehicles: omits vehicles without complete coordinates', async () => {
+    h.methods.vehiclesForAgency.list.mockResolvedValue({
+      data: {
+        limitExceeded: false,
+        references: { trips: [], routes: [] },
+        list: [
+          {
+            vehicleId: '1_missing_lon',
+            location: { lat: 47.6 },
+            lastUpdateTime: 1748000000000,
+          },
+          {
+            vehicleId: '1_missing_lat',
+            location: { lon: -122.3 },
+            lastUpdateTime: 1748000000000,
+          },
+          {
+            vehicleId: '1_complete',
+            location: { lat: 47.6, lon: -122.3 },
+            lastUpdateTime: 1748000000000,
+          },
+        ],
+      },
+    });
+    const result = await getOneBusAwayService().getVehicles({ agencyId: '1' }, ctx);
+    expect(result.vehicles).toHaveLength(1);
+    expect(result.vehicles[0]?.vehicleId).toBe('1_complete');
+    expect(result.vehicles[0]?.position).toEqual({ lat: 47.6, lon: -122.3 });
+  });
+
   it('getScheduleForStop: empty route shortName falls through to nullSafeShortName', async () => {
     h.methods.scheduleForStop.retrieve.mockResolvedValue({
       data: {

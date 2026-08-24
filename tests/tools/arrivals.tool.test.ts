@@ -3,10 +3,11 @@
  * @module tests/tools/arrivals.tool.test
  */
 
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
 import { expectContentParity } from './format-parity.helper.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -48,7 +49,7 @@ const ARRIVALS_RESULT = {
 
 describe('getArrivals', () => {
   it('returns arrivals result from service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockResolvedValue(ARRIVALS_RESULT);
     const input = getArrivals.input.parse({ stopId: '1_75403' });
     const result = await getArrivals.handler(input, ctx);
@@ -58,7 +59,7 @@ describe('getArrivals', () => {
   });
 
   it('enriches with queriedStop, count, and window', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockResolvedValue(ARRIVALS_RESULT);
     const input = getArrivals.input.parse({ stopId: '1_75403' });
     await getArrivals.handler(input, ctx);
@@ -70,7 +71,7 @@ describe('getArrivals', () => {
   });
 
   it('enriches with notice when no arrivals', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockResolvedValue({ ...ARRIVALS_RESULT, arrivals: [] });
     const input = getArrivals.input.parse({ stopId: '1_75403' });
     await getArrivals.handler(input, ctx);
@@ -80,7 +81,7 @@ describe('getArrivals', () => {
   });
 
   it('passes minutesBefore/minutesAfter to service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockResolvedValue({ ...ARRIVALS_RESULT, arrivals: [] });
     const input = getArrivals.input.parse({
       stopId: '1_75403',
@@ -95,7 +96,7 @@ describe('getArrivals', () => {
   });
 
   it('propagates service errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockRejectedValue(new Error('stop not found'));
     const input = getArrivals.input.parse({ stopId: 'bad_id' });
     await expect(getArrivals.handler(input, ctx)).rejects.toThrow();

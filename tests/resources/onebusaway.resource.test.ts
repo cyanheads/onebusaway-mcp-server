@@ -19,6 +19,11 @@ const mockService = {
   getRoute: vi.fn(),
 };
 
+/** Resource list callbacks receive the SDK's request-scoped context shape. */
+function createResourceListContext(): Parameters<NonNullable<typeof stopResource.list>>[0] {
+  return createMockContext() as unknown as Parameters<NonNullable<typeof stopResource.list>>[0];
+}
+
 beforeEach(() => {
   vi.mocked(getOneBusAwayService).mockReturnValue(mockService as never);
   vi.clearAllMocks();
@@ -53,7 +58,7 @@ describe('stopResource', () => {
   it('returns stop data for valid stop ID', async () => {
     const ctx = createMockContext();
     mockService.getStop.mockResolvedValue(STOP_FIXTURE);
-    const params = stopResource.params.parse({ stopId: '1_75403' });
+    const params = stopResource.params!.parse({ stopId: '1_75403' });
     const result = await stopResource.handler(params, ctx);
     expect(result).toMatchObject({ id: '1_75403', name: 'University Way NE & NE 42nd St' });
   });
@@ -61,12 +66,12 @@ describe('stopResource', () => {
   it('propagates not-found errors from service', async () => {
     const ctx = createMockContext();
     mockService.getStop.mockRejectedValue(new Error('stop "bad_id" not found.'));
-    const params = stopResource.params.parse({ stopId: 'bad_id' });
+    const params = stopResource.params!.parse({ stopId: 'bad_id' });
     await expect(stopResource.handler(params, ctx)).rejects.toThrow();
   });
 
   it('lists example resources', async () => {
-    const listing = await stopResource.list!();
+    const listing = await stopResource.list!(createResourceListContext());
     expect(listing.resources).toBeInstanceOf(Array);
     expect(listing.resources.length).toBeGreaterThan(0);
     for (const r of listing.resources) {
@@ -76,7 +81,7 @@ describe('stopResource', () => {
   });
 
   it('list URIs use the onebusaway:// scheme', async () => {
-    const listing = await stopResource.list!();
+    const listing = await stopResource.list!(createResourceListContext());
     for (const r of listing.resources) {
       expect(r.uri).toMatch(/^onebusaway:\/\/stop\//);
     }
@@ -89,7 +94,7 @@ describe('routeResource', () => {
   it('returns route data for valid route ID', async () => {
     const ctx = createMockContext();
     mockService.getRoute.mockResolvedValue(ROUTE_FIXTURE);
-    const params = routeResource.params.parse({ routeId: '1_100259' });
+    const params = routeResource.params!.parse({ routeId: '1_100259' });
     const result = await routeResource.handler(params, ctx);
     expect(result).toMatchObject({ id: '1_100259', shortName: '44' });
   });
@@ -97,12 +102,12 @@ describe('routeResource', () => {
   it('propagates not-found errors from service', async () => {
     const ctx = createMockContext();
     mockService.getRoute.mockRejectedValue(new Error('route "bad_id" not found.'));
-    const params = routeResource.params.parse({ routeId: 'bad_id' });
+    const params = routeResource.params!.parse({ routeId: 'bad_id' });
     await expect(routeResource.handler(params, ctx)).rejects.toThrow();
   });
 
   it('lists example resources', async () => {
-    const listing = await routeResource.list!();
+    const listing = await routeResource.list!(createResourceListContext());
     expect(listing.resources).toBeInstanceOf(Array);
     expect(listing.resources.length).toBeGreaterThan(0);
     for (const r of listing.resources) {
@@ -112,7 +117,7 @@ describe('routeResource', () => {
   });
 
   it('list URIs use the onebusaway:// scheme', async () => {
-    const listing = await routeResource.list!();
+    const listing = await routeResource.list!(createResourceListContext());
     for (const r of listing.resources) {
       expect(r.uri).toMatch(/^onebusaway:\/\/route\//);
     }

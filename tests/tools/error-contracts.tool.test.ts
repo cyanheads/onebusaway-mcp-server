@@ -3,8 +3,7 @@
  * @module tests/tools/error-contracts.tool.test
  */
 
-import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
 import { getScheduleForRoute } from '@/mcp-server/tools/definitions/get-schedule-for-route.tool.js';
@@ -13,6 +12,7 @@ import { getStop } from '@/mcp-server/tools/definitions/get-stop.tool.js';
 import { getTrip } from '@/mcp-server/tools/definitions/get-trip.tool.js';
 import { getVehicles } from '@/mcp-server/tools/definitions/get-vehicles.tool.js';
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -39,7 +39,7 @@ beforeEach(() => {
 
 describe('getStop error contracts', () => {
   it('data.reason is "stop_not_found" when service throws NotFound', async () => {
-    const ctx = createMockContext({ errors: getStop.errors });
+    const ctx = createToolContext(getStop);
     mockService.getStop.mockRejectedValue(
       new McpError(-32001, 'stop "1_INVALID" not found.', {
         id: '1_INVALID',
@@ -53,7 +53,7 @@ describe('getStop error contracts', () => {
   });
 
   it('propagates generic service error without contract wrapping', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getStop);
     mockService.getStop.mockRejectedValue(new Error('Network timeout'));
     const input = getStop.input.parse({ stopId: '1_75403' });
     await expect(getStop.handler(input, ctx)).rejects.toThrow('Network timeout');
@@ -64,7 +64,7 @@ describe('getStop error contracts', () => {
 
 describe('getArrivals error contracts', () => {
   it('data.reason is "stop_not_found" on NotFound from service', async () => {
-    const ctx = createMockContext({ errors: getArrivals.errors });
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockRejectedValue(
       new McpError(-32001, 'stop "bad_id" not found.', {
         id: 'bad_id',
@@ -78,9 +78,9 @@ describe('getArrivals error contracts', () => {
   });
 
   it('data.reason is "rate_limited" on 429 response', async () => {
-    const ctx = createMockContext({ errors: getArrivals.errors });
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockRejectedValue(
-      new McpError(-32029, 'API rate limited.', {
+      new McpError(JsonRpcErrorCode.RateLimited, 'API rate limited.', {
         reason: 'rate_limited',
         retryAfter: 60,
       }),
@@ -92,7 +92,7 @@ describe('getArrivals error contracts', () => {
   });
 
   it('propagates generic service errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockRejectedValue(new Error('Service unavailable'));
     const input = getArrivals.input.parse({ stopId: '1_75403' });
     await expect(getArrivals.handler(input, ctx)).rejects.toThrow();
@@ -108,7 +108,7 @@ describe('getArrivals error contracts', () => {
 
 describe('getTrip error contracts', () => {
   it('data.reason is "trip_not_found" on NotFound', async () => {
-    const ctx = createMockContext({ errors: getTrip.errors });
+    const ctx = createToolContext(getTrip);
     mockService.getTrip.mockRejectedValue(
       new McpError(-32001, 'trip "bad_trip" not found.', {
         id: 'bad_trip',
@@ -122,7 +122,7 @@ describe('getTrip error contracts', () => {
   });
 
   it('omits serviceDate when serviceDateMs not provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getTrip);
     const tripResult = {
       tripId: 'trip_abc',
       routeShortName: '44',
@@ -150,7 +150,7 @@ describe('getTrip error contracts', () => {
   });
 
   it('passes serviceDate when serviceDateMs provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getTrip);
     const tripResult = {
       tripId: 'trip_abc',
       routeShortName: '44',
@@ -178,7 +178,7 @@ describe('getTrip error contracts', () => {
   });
 
   it('passes includeSchedule=false to service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getTrip);
     const tripResult = {
       tripId: 'trip_abc',
       routeShortName: '44',
@@ -210,7 +210,7 @@ describe('getTrip error contracts', () => {
 
 describe('getVehicles error contracts', () => {
   it('data.reason is "agency_not_found" when service throws NotFound', async () => {
-    const ctx = createMockContext({ errors: getVehicles.errors });
+    const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockRejectedValue(
       new McpError(-32001, 'agency "bad_agency" not found.', {
         id: 'bad_agency',
@@ -228,7 +228,7 @@ describe('getVehicles error contracts', () => {
 
 describe('searchRoutes error contracts', () => {
   it('data.reason is "endpoint_unavailable" on 404 response', async () => {
-    const ctx = createMockContext({ errors: searchRoutes.errors });
+    const ctx = createToolContext(searchRoutes);
     mockService.searchRoutes.mockRejectedValue(
       new McpError(-32001, 'endpoint not found.', {
         reason: 'endpoint_unavailable',
@@ -245,7 +245,7 @@ describe('searchRoutes error contracts', () => {
 
 describe('getScheduleForStop error contracts', () => {
   it('data.reason is "stop_not_found" on NotFound', async () => {
-    const ctx = createMockContext({ errors: getScheduleForStop.errors });
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockRejectedValue(
       new McpError(-32001, 'stop "1_INVALID" not found.', {
         id: '1_INVALID',
@@ -263,7 +263,7 @@ describe('getScheduleForStop error contracts', () => {
 
 describe('getScheduleForRoute error contracts', () => {
   it('data.reason is "route_not_found" on NotFound', async () => {
-    const ctx = createMockContext({ errors: getScheduleForRoute.errors });
+    const ctx = createToolContext(getScheduleForRoute);
     mockService.getScheduleForRoute.mockRejectedValue(
       new McpError(-32001, 'route "1_INVALID" not found.', {
         id: '1_INVALID',

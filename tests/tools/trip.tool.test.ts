@@ -3,10 +3,10 @@
  * @module tests/tools/trip.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTrip } from '@/mcp-server/tools/definitions/get-trip.tool.js';
 import { expectContentParity } from './format-parity.helper.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -67,7 +67,7 @@ const TRIP_RESULT = {
 
 describe('getTrip', () => {
   it('returns trip status from service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getTrip);
     mockService.getTrip.mockResolvedValue(TRIP_RESULT);
     const input = getTrip.input.parse({ tripId: 'trip_abc' });
     const result = await getTrip.handler(input, ctx);
@@ -77,7 +77,7 @@ describe('getTrip', () => {
   });
 
   it('passes optional serviceDate when provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getTrip);
     mockService.getTrip.mockResolvedValue(TRIP_RESULT);
     const input = getTrip.input.parse({ tripId: 'trip_abc', serviceDateMs: NOW_MS });
     await getTrip.handler(input, ctx);
@@ -88,7 +88,7 @@ describe('getTrip', () => {
   });
 
   it('propagates service errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getTrip);
     mockService.getTrip.mockRejectedValue(new Error('trip not found'));
     const input = getTrip.input.parse({ tripId: 'bad_trip' });
     await expect(getTrip.handler(input, ctx)).rejects.toThrow();

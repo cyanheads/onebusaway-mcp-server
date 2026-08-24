@@ -4,11 +4,11 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAlert } from '@/mcp-server/tools/definitions/get-alert.tool.js';
 import { getBlock } from '@/mcp-server/tools/definitions/get-block.tool.js';
 import { expectContentParity } from './format-parity.helper.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -101,7 +101,7 @@ const BLOCK_SPARSE = {
 
 describe('getAlert', () => {
   it('returns alert detail for a valid situation ID', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getAlert);
     mockService.getAlert.mockResolvedValue(ALERT_FIXTURE);
     const input = getAlert.input.parse({ situationId: '1_sit_001' });
     const result = await getAlert.handler(input, ctx);
@@ -116,7 +116,7 @@ describe('getAlert', () => {
   });
 
   it('throws ctx.fail("situation_not_found") for unknown situation ID', async () => {
-    const ctx = createMockContext({ errors: getAlert.errors });
+    const ctx = createToolContext(getAlert);
     mockService.getAlert.mockRejectedValue(
       new McpError(-32001, 'situation "bad_id" not found.', {
         id: 'bad_id',
@@ -172,7 +172,7 @@ describe('getAlert', () => {
 
 describe('getBlock', () => {
   it('returns block schedule with trips and stop times', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getBlock);
     mockService.getBlock.mockResolvedValue(BLOCK_FIXTURE);
     const input = getBlock.input.parse({ blockId: '1_block_101' });
     const result = await getBlock.handler(input, ctx);
@@ -184,7 +184,7 @@ describe('getBlock', () => {
   });
 
   it('throws ctx.fail("block_not_found") for unknown block ID', async () => {
-    const ctx = createMockContext({ errors: getBlock.errors });
+    const ctx = createToolContext(getBlock);
     mockService.getBlock.mockRejectedValue(
       new McpError(-32001, 'block "bad_block" not found.', {
         id: 'bad_block',

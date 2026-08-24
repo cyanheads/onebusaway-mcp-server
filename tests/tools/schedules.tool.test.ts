@@ -3,10 +3,11 @@
  * @module tests/tools/schedules.tool.test
  */
 
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getScheduleForRoute } from '@/mcp-server/tools/definitions/get-schedule-for-route.tool.js';
 import { getScheduleForStop } from '@/mcp-server/tools/definitions/get-schedule-for-stop.tool.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -88,7 +89,7 @@ const ROUTE_SCHEDULE = {
 
 describe('getScheduleForStop', () => {
   it('returns stop schedule from service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
     const input = getScheduleForStop.input.parse({ stopId: '1_75403' });
     const result = await getScheduleForStop.handler(input, ctx);
@@ -98,7 +99,7 @@ describe('getScheduleForStop', () => {
   });
 
   it('enriches with queriedStop and routeCount', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
     const input = getScheduleForStop.input.parse({ stopId: '1_75403' });
     await getScheduleForStop.handler(input, ctx);
@@ -109,7 +110,7 @@ describe('getScheduleForStop', () => {
   });
 
   it('enriches with notice when no routes found', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockResolvedValue({ ...STOP_SCHEDULE, routes: [] });
     const input = getScheduleForStop.input.parse({ stopId: '1_75403' });
     await getScheduleForStop.handler(input, ctx);
@@ -119,7 +120,7 @@ describe('getScheduleForStop', () => {
   });
 
   it('echoes date in enrichment when provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
     const input = getScheduleForStop.input.parse({ stopId: '1_75403', date: '2026-05-23' });
     await getScheduleForStop.handler(input, ctx);
@@ -128,7 +129,7 @@ describe('getScheduleForStop', () => {
   });
 
   it('passes date when provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
     const input = getScheduleForStop.input.parse({ stopId: '1_75403', date: '2026-05-23' });
     await getScheduleForStop.handler(input, ctx);
@@ -139,7 +140,7 @@ describe('getScheduleForStop', () => {
   });
 
   it('omits empty date from service call', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
     const input = getScheduleForStop.input.parse({ stopId: '1_75403', date: '' });
     await getScheduleForStop.handler(input, ctx);
@@ -150,7 +151,7 @@ describe('getScheduleForStop', () => {
   });
 
   it('propagates service errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockRejectedValue(new Error('stop not found'));
     const input = getScheduleForStop.input.parse({ stopId: 'bad_id' });
     await expect(getScheduleForStop.handler(input, ctx)).rejects.toThrow();
@@ -176,7 +177,7 @@ describe('getScheduleForStop', () => {
 
 describe('getScheduleForRoute', () => {
   it('returns route schedule from service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForRoute);
     mockService.getScheduleForRoute.mockResolvedValue(ROUTE_SCHEDULE);
     const input = getScheduleForRoute.input.parse({ routeId: '1_100259' });
     const result = await getScheduleForRoute.handler(input, ctx);
@@ -186,7 +187,7 @@ describe('getScheduleForRoute', () => {
   });
 
   it('enriches with queriedRoute and tripCount', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForRoute);
     mockService.getScheduleForRoute.mockResolvedValue(ROUTE_SCHEDULE);
     const input = getScheduleForRoute.input.parse({ routeId: '1_100259' });
     await getScheduleForRoute.handler(input, ctx);
@@ -197,7 +198,7 @@ describe('getScheduleForRoute', () => {
   });
 
   it('enriches with notice when no trips found', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForRoute);
     mockService.getScheduleForRoute.mockResolvedValue({ ...ROUTE_SCHEDULE, trips: [] });
     const input = getScheduleForRoute.input.parse({ routeId: '1_100259' });
     await getScheduleForRoute.handler(input, ctx);
@@ -207,7 +208,7 @@ describe('getScheduleForRoute', () => {
   });
 
   it('echoes date in enrichment when provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForRoute);
     mockService.getScheduleForRoute.mockResolvedValue(ROUTE_SCHEDULE);
     const input = getScheduleForRoute.input.parse({ routeId: '1_100259', date: '2026-05-23' });
     await getScheduleForRoute.handler(input, ctx);
@@ -216,7 +217,7 @@ describe('getScheduleForRoute', () => {
   });
 
   it('passes date when provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForRoute);
     mockService.getScheduleForRoute.mockResolvedValue(ROUTE_SCHEDULE);
     const input = getScheduleForRoute.input.parse({ routeId: '1_100259', date: '2026-05-23' });
     await getScheduleForRoute.handler(input, ctx);
@@ -227,7 +228,7 @@ describe('getScheduleForRoute', () => {
   });
 
   it('propagates service errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForRoute);
     mockService.getScheduleForRoute.mockRejectedValue(new Error('route not found'));
     const input = getScheduleForRoute.input.parse({ routeId: 'bad_id' });
     await expect(getScheduleForRoute.handler(input, ctx)).rejects.toThrow();

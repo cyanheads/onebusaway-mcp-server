@@ -4,12 +4,13 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
 import { getStop } from '@/mcp-server/tools/definitions/get-stop.tool.js';
 import { searchStops } from '@/mcp-server/tools/definitions/search-stops.tool.js';
 import { expectContentParity } from './format-parity.helper.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -43,7 +44,7 @@ const STOP_FIXTURE = {
 
 describe('findStops', () => {
   it('returns nearby stops with limitExceeded', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
     const input = findStops.input.parse({ lat: 47.6586, lon: -122.3146 });
     const result = await findStops.handler(input, ctx);
@@ -53,7 +54,7 @@ describe('findStops', () => {
   });
 
   it('enriches with count and no notice for successful results', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
     const input = findStops.input.parse({ lat: 47.6586, lon: -122.3146 });
     await findStops.handler(input, ctx);
@@ -63,7 +64,7 @@ describe('findStops', () => {
   });
 
   it('enriches with notice when no stops found', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = findStops.input.parse({ lat: 47.6, lon: -122.3 });
     await findStops.handler(input, ctx);
@@ -73,7 +74,7 @@ describe('findStops', () => {
   });
 
   it('enriches with notice when limitExceeded', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: true });
     const input = findStops.input.parse({ lat: 47.6, lon: -122.3 });
     await findStops.handler(input, ctx);
@@ -82,7 +83,7 @@ describe('findStops', () => {
   });
 
   it('echoes query in enrichment when filter provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = findStops.input.parse({ lat: 47.6, lon: -122.3, query: '75403' });
     await findStops.handler(input, ctx);
@@ -91,7 +92,7 @@ describe('findStops', () => {
   });
 
   it('passes query filter to service when provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = findStops.input.parse({ lat: 47.6, lon: -122.3, query: '75403' });
     await findStops.handler(input, ctx);
@@ -102,7 +103,7 @@ describe('findStops', () => {
   });
 
   it('omits empty query string from service call', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = findStops.input.parse({ lat: 47.6, lon: -122.3, query: '' });
     await findStops.handler(input, ctx);
@@ -146,7 +147,7 @@ describe('findStops', () => {
 
 describe('getStop', () => {
   it('returns stop details', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getStop);
     mockService.getStop.mockResolvedValue(STOP_FIXTURE);
     const input = getStop.input.parse({ stopId: '1_75403' });
     const result = await getStop.handler(input, ctx);
@@ -154,7 +155,7 @@ describe('getStop', () => {
   });
 
   it('propagates not-found errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getStop);
     mockService.getStop.mockRejectedValue(
       new McpError(-32001, 'stop "bad_id" not found.', { id: 'bad_id' }),
     );
@@ -163,7 +164,7 @@ describe('getStop', () => {
   });
 
   it('throws with data.reason "stop_not_found" from classifyError (#12)', async () => {
-    const ctx = createMockContext({ errors: getStop.errors });
+    const ctx = createToolContext(getStop);
     mockService.getStop.mockRejectedValue(
       new McpError(-32001, 'stop "1_INVALID" not found.', {
         id: '1_INVALID',
@@ -202,7 +203,7 @@ describe('getStop', () => {
 
 describe('searchStops', () => {
   it('returns matching stops with limitExceeded flag', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchStops);
     mockService.searchStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
     const input = searchStops.input.parse({ query: '75403' });
     const result = await searchStops.handler(input, ctx);
@@ -212,7 +213,7 @@ describe('searchStops', () => {
   });
 
   it('enriches with query and count', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchStops);
     mockService.searchStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
     const input = searchStops.input.parse({ query: '75403' });
     await searchStops.handler(input, ctx);
@@ -223,7 +224,7 @@ describe('searchStops', () => {
   });
 
   it('enriches with notice when no matches', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchStops);
     mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = searchStops.input.parse({ query: 'nowhere' });
     await searchStops.handler(input, ctx);
@@ -233,16 +234,17 @@ describe('searchStops', () => {
   });
 
   it('enriches with truncation notice when limitExceeded', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchStops);
     mockService.searchStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: true });
-    const input = searchStops.input.parse({ query: '75403' });
+    const input = searchStops.input.parse({ query: '75403', maxCount: 3 });
     await searchStops.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
     expect(enrichment.notice).toMatch(/truncated/i);
+    expect(enrichment).toMatchObject({ truncated: true, shown: 1, cap: 3 });
   });
 
   it('returns empty list when no matches', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchStops);
     mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = searchStops.input.parse({ query: 'nowhere' });
     const result = await searchStops.handler(input, ctx);

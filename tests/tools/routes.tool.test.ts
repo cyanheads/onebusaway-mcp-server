@@ -4,13 +4,14 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { getRoute } from '@/mcp-server/tools/definitions/get-route.tool.js';
 import { listRoutesForAgency } from '@/mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
 import { expectContentParity } from './format-parity.helper.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -46,7 +47,7 @@ const ROUTE_FIXTURE = {
 
 describe('findRoutes', () => {
   it('returns nearby routes with limitExceeded flag', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [ROUTE_FIXTURE], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6586, lon: -122.3146 });
     const result = await findRoutes.handler(input, ctx);
@@ -56,7 +57,7 @@ describe('findRoutes', () => {
   });
 
   it('enriches with count and no notice for successful results', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [ROUTE_FIXTURE], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6586, lon: -122.3146 });
     await findRoutes.handler(input, ctx);
@@ -66,7 +67,7 @@ describe('findRoutes', () => {
   });
 
   it('enriches with notice when no routes found', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3 });
     await findRoutes.handler(input, ctx);
@@ -76,7 +77,7 @@ describe('findRoutes', () => {
   });
 
   it('enriches with truncation notice when limitExceeded', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [ROUTE_FIXTURE], limitExceeded: true });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3 });
     await findRoutes.handler(input, ctx);
@@ -85,7 +86,7 @@ describe('findRoutes', () => {
   });
 
   it('echoes query in enrichment when filter provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, query: '44' });
     await findRoutes.handler(input, ctx);
@@ -94,7 +95,7 @@ describe('findRoutes', () => {
   });
 
   it('passes query filter to service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, query: '44' });
     await findRoutes.handler(input, ctx);
@@ -105,7 +106,7 @@ describe('findRoutes', () => {
   });
 
   it('omits empty query from service call', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, query: '' });
     await findRoutes.handler(input, ctx);
@@ -116,7 +117,7 @@ describe('findRoutes', () => {
   });
 
   it('sends latSpan/lonSpan bounding box instead of radius when both provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, latSpan: 0.1, lonSpan: 0.2 });
     await findRoutes.handler(input, ctx);
@@ -131,7 +132,7 @@ describe('findRoutes', () => {
   });
 
   it('falls back to radius when only one span is provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, latSpan: 0.1 });
     await findRoutes.handler(input, ctx);
@@ -173,7 +174,7 @@ describe('findRoutes', () => {
 
 describe('getRoute', () => {
   it('returns route details', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getRoute);
     mockService.getRoute.mockResolvedValue(ROUTE_FIXTURE);
     const input = getRoute.input.parse({ routeId: '1_100259' });
     const result = await getRoute.handler(input, ctx);
@@ -181,7 +182,7 @@ describe('getRoute', () => {
   });
 
   it('propagates not-found errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getRoute);
     mockService.getRoute.mockRejectedValue(
       new McpError(-32001, 'route "bad_id" not found.', { id: 'bad_id' }),
     );
@@ -215,7 +216,7 @@ describe('getRoute', () => {
 
 describe('listRoutesForAgency', () => {
   it('returns routes for agency with limitExceeded flag', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listRoutesForAgency);
     mockService.listRoutesForAgency.mockResolvedValue({
       routes: [ROUTE_FIXTURE],
       limitExceeded: false,
@@ -228,7 +229,7 @@ describe('listRoutesForAgency', () => {
   });
 
   it('enriches with agencyId and count', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listRoutesForAgency);
     mockService.listRoutesForAgency.mockResolvedValue({
       routes: [ROUTE_FIXTURE],
       limitExceeded: false,
@@ -241,7 +242,7 @@ describe('listRoutesForAgency', () => {
   });
 
   it('propagates not-found for invalid agency', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listRoutesForAgency);
     mockService.listRoutesForAgency.mockRejectedValue(
       new McpError(-32001, 'agency "bad" not found.', { id: 'bad' }),
     );
@@ -250,7 +251,7 @@ describe('listRoutesForAgency', () => {
   });
 
   it('throws with data.reason "agency_not_found" from classifyError', async () => {
-    const ctx = createMockContext({ errors: listRoutesForAgency.errors });
+    const ctx = createToolContext(listRoutesForAgency);
     mockService.listRoutesForAgency.mockRejectedValue(
       new McpError(-32001, 'agency "bad" not found.', { id: 'bad', reason: 'agency_not_found' }),
     );
@@ -261,7 +262,7 @@ describe('listRoutesForAgency', () => {
   });
 
   it('enriches with notice when route list is empty (#14)', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listRoutesForAgency);
     mockService.listRoutesForAgency.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = listRoutesForAgency.input.parse({ agencyId: 'empty_agency' });
     await listRoutesForAgency.handler(input, ctx);
@@ -273,7 +274,7 @@ describe('listRoutesForAgency', () => {
   });
 
   it('enriches with truncation notice when limitExceeded', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listRoutesForAgency);
     mockService.listRoutesForAgency.mockResolvedValue({
       routes: [ROUTE_FIXTURE],
       limitExceeded: true,
@@ -338,7 +339,7 @@ describe('listRoutesForAgency', () => {
 
 describe('searchRoutes', () => {
   it('returns matching routes with limitExceeded flag', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchRoutes);
     mockService.searchRoutes.mockResolvedValue({ routes: [ROUTE_FIXTURE], limitExceeded: false });
     const input = searchRoutes.input.parse({ query: '44' });
     const result = await searchRoutes.handler(input, ctx);
@@ -347,7 +348,7 @@ describe('searchRoutes', () => {
   });
 
   it('enriches with query and count', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchRoutes);
     mockService.searchRoutes.mockResolvedValue({ routes: [ROUTE_FIXTURE], limitExceeded: false });
     const input = searchRoutes.input.parse({ query: '44' });
     await searchRoutes.handler(input, ctx);
@@ -358,7 +359,7 @@ describe('searchRoutes', () => {
   });
 
   it('enriches with notice when no match', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchRoutes);
     mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = searchRoutes.input.parse({ query: 'zzz_no_route' });
     await searchRoutes.handler(input, ctx);
@@ -368,16 +369,17 @@ describe('searchRoutes', () => {
   });
 
   it('enriches with truncation notice when limitExceeded', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchRoutes);
     mockService.searchRoutes.mockResolvedValue({ routes: [ROUTE_FIXTURE], limitExceeded: true });
-    const input = searchRoutes.input.parse({ query: '44' });
+    const input = searchRoutes.input.parse({ query: '44', maxCount: 5 });
     await searchRoutes.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
     expect(enrichment.notice).toMatch(/truncated/i);
+    expect(enrichment).toMatchObject({ truncated: true, shown: 1, cap: 5 });
   });
 
   it('returns empty list when no match', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchRoutes);
     mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = searchRoutes.input.parse({ query: 'zzz_no_route' });
     const result = await searchRoutes.handler(input, ctx);

@@ -3,7 +3,6 @@
  * @module tests/tools/security.tool.test
  */
 
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
@@ -18,6 +17,7 @@ import { listAgencies } from '@/mcp-server/tools/definitions/list-agencies.tool.
 import { listRoutesForAgency } from '@/mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
 import { searchStops } from '@/mcp-server/tools/definitions/search-stops.tool.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -76,20 +76,21 @@ function makeStopResult(id: string) {
 // ---- findStops security ----
 
 describe('findStops security', () => {
-  it.each(
-    INJECTION_PAYLOADS.slice(0, 3),
-  )('query param injection "%s" is handled safely', async (payload) => {
-    const ctx = createMockContext();
-    mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
-    // Should not throw even with adversarial query
-    const input = findStops.input.parse({ lat: 47.6, lon: -122.3, query: payload });
-    await expect(findStops.handler(input, ctx)).resolves.toBeDefined();
-    // Service receives the payload as-is (no injection into the URL)
-    expect(mockService.findStops).toHaveBeenCalledTimes(1);
-  });
+  it.each(INJECTION_PAYLOADS.slice(0, 3))(
+    'query param injection "%s" is handled safely',
+    async (payload) => {
+      const ctx = createToolContext(findStops);
+      mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
+      // Should not throw even with adversarial query
+      const input = findStops.input.parse({ lat: 47.6, lon: -122.3, query: payload });
+      await expect(findStops.handler(input, ctx)).resolves.toBeDefined();
+      // Service receives the payload as-is (no injection into the URL)
+      expect(mockService.findStops).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it('oversized query string does not crash', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     const bigQuery = 'A'.repeat(5000);
     mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = findStops.input.parse({ lat: 47.6, lon: -122.3, query: bigQuery });
@@ -97,7 +98,7 @@ describe('findStops security', () => {
   });
 
   it('format output does not contain API key', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({
       stops: [makeStopResult('1_75403')],
       limitExceeded: false,
@@ -112,19 +113,20 @@ describe('findStops security', () => {
 // ---- searchStops security ----
 
 describe('searchStops security', () => {
-  it.each(
-    INJECTION_PAYLOADS.slice(0, 3),
-  )('injection payload "%s" does not crash handler', async (payload) => {
-    // Payloads that pass Zod min(1) only
-    if (payload.length === 0) return;
-    const ctx = createMockContext();
-    mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
-    const input = searchStops.input.parse({ query: payload });
-    await expect(searchStops.handler(input, ctx)).resolves.toBeDefined();
-  });
+  it.each(INJECTION_PAYLOADS.slice(0, 3))(
+    'injection payload "%s" does not crash handler',
+    async (payload) => {
+      // Payloads that pass Zod min(1) only
+      if (payload.length === 0) return;
+      const ctx = createToolContext(searchStops);
+      mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
+      const input = searchStops.input.parse({ query: payload });
+      await expect(searchStops.handler(input, ctx)).resolves.toBeDefined();
+    },
+  );
 
   it('format output does not contain API key', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchStops);
     mockService.searchStops.mockResolvedValue({
       stops: [makeStopResult('1_75403')],
       limitExceeded: false,
@@ -139,16 +141,15 @@ describe('searchStops security', () => {
 // ---- getStop security ----
 
 describe('getStop security', () => {
-  it.each([
-    "'; DROP TABLE --",
-    '../../etc/passwd',
-    '\x00null\x00',
-  ])('stopId with injection chars "%s" passes schema and does not crash', async (payload) => {
-    const ctx = createMockContext();
-    mockService.getStop.mockRejectedValue(new Error(`stop "${payload}" not found.`));
-    const input = getStop.input.parse({ stopId: payload });
-    await expect(getStop.handler(input, ctx)).rejects.toThrow();
-  });
+  it.each(["'; DROP TABLE --", '../../etc/passwd', '\x00null\x00'])(
+    'stopId with injection chars "%s" passes schema and does not crash',
+    async (payload) => {
+      const ctx = createToolContext(getStop);
+      mockService.getStop.mockRejectedValue(new Error(`stop "${payload}" not found.`));
+      const input = getStop.input.parse({ stopId: payload });
+      await expect(getStop.handler(input, ctx)).rejects.toThrow();
+    },
+  );
 
   it('format output does not contain API key', async () => {
     const stop = makeStopResult('1_75403');
@@ -161,7 +162,7 @@ describe('getStop security', () => {
 
 describe('getArrivals security', () => {
   it('format output does not contain API key', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getArrivals);
     const now = Date.now();
     mockService.getArrivals.mockResolvedValue({
       stopId: '1_75403',
@@ -177,7 +178,7 @@ describe('getArrivals security', () => {
   });
 
   it('error message does not expose internal env config', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockRejectedValue(new Error('Request failed'));
     const input = getArrivals.input.parse({ stopId: '1_75403' });
     await expect(getArrivals.handler(input, ctx)).rejects.toThrow();
@@ -195,15 +196,15 @@ describe('getArrivals security', () => {
 // ---- searchRoutes security ----
 
 describe('searchRoutes security', () => {
-  it.each([
-    "'; DROP TABLE --",
-    '<script>alert(1)</script>',
-  ])('injection payload "%s" does not crash handler', async (payload) => {
-    const ctx = createMockContext();
-    mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
-    const input = searchRoutes.input.parse({ query: payload });
-    await expect(searchRoutes.handler(input, ctx)).resolves.toBeDefined();
-  });
+  it.each(["'; DROP TABLE --", '<script>alert(1)</script>'])(
+    'injection payload "%s" does not crash handler',
+    async (payload) => {
+      const ctx = createToolContext(searchRoutes);
+      mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
+      const input = searchRoutes.input.parse({ query: payload });
+      await expect(searchRoutes.handler(input, ctx)).resolves.toBeDefined();
+    },
+  );
 
   it('format output does not contain API key', async () => {
     mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
@@ -223,7 +224,7 @@ describe('findRoutes security', () => {
   });
 
   it('oversized query string does not crash', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findRoutes);
     const bigQuery = 'R'.repeat(5000);
     mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, query: bigQuery });
@@ -296,6 +297,7 @@ describe('getTrip security', () => {
       tripId: 'trip_abc',
       routeShortName: '44',
       tripHeadsign: 'Downtown Seattle',
+      blockId: null,
       status: {
         phase: 'in_progress',
         predicted: true,
@@ -318,7 +320,7 @@ describe('getTrip security', () => {
 
 describe('getAlert security', () => {
   it('injection content in alert fields is not executed', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getAlert);
     const injectedAlert = {
       id: '1_sit_001',
       summary: '<script>alert("xss")</script>',

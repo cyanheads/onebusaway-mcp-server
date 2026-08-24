@@ -21,6 +21,7 @@ import { listRoutesForAgency } from '@/mcp-server/tools/definitions/list-routes-
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
 import { searchStops } from '@/mcp-server/tools/definitions/search-stops.tool.js';
 import { expectContentParity } from './format-parity.helper.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -475,6 +476,7 @@ describe('getTrip edge cases', () => {
       tripId: 'trip_abc',
       routeShortName: '44',
       tripHeadsign: 'Downtown',
+      blockId: null,
       status: {
         phase: 'in_progress',
         predicted: true,
@@ -537,6 +539,7 @@ describe('getTrip edge cases', () => {
       tripId: 'trip_big',
       routeShortName: '44',
       tripHeadsign: 'Terminus',
+      blockId: null,
       status: {
         phase: 'in_progress',
         predicted: true,
@@ -561,7 +564,7 @@ describe('getTrip edge cases', () => {
 
 describe('getAlert edge cases', () => {
   it('handles alert with open-ended active window (no "to")', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getAlert);
     const openEndedAlert = {
       id: '1_sit_open',
       summary: 'Ongoing disruption',
@@ -767,7 +770,7 @@ describe('getScheduleForStop edge cases', () => {
   });
 
   it('echoes date in enrichment when date provided', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockResolvedValue({
       stopId: '1_75403',
       stopName: 'Hub Stop',
@@ -805,7 +808,7 @@ describe('getScheduleForRoute edge cases', () => {
   });
 
   it('handles route schedule with multiple trips', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(getScheduleForRoute);
     const manyTrips = {
       routeId: '1_100259',
       routeShortName: '44',
@@ -837,7 +840,7 @@ describe('getScheduleForRoute edge cases', () => {
 
 describe('searchStops edge cases', () => {
   it('passes maxCount to service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchStops);
     mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
     const input = searchStops.input.parse({ query: 'University', maxCount: 3 });
     await searchStops.handler(input, ctx);
@@ -881,7 +884,7 @@ describe('searchStops edge cases', () => {
 
 describe('searchRoutes edge cases', () => {
   it('passes maxCount to service', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(searchRoutes);
     mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
     const input = searchRoutes.input.parse({ query: '44', maxCount: 5 });
     await searchRoutes.handler(input, ctx);
@@ -932,7 +935,7 @@ describe('listRoutesForAgency edge cases', () => {
   });
 
   it('formats large list of routes without crash', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listRoutesForAgency);
     const routes = Array.from({ length: 100 }, (_, i) => ({
       id: `1_route_${i}`,
       shortName: `R${i}`,

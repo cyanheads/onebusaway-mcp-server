@@ -70,6 +70,9 @@ export const searchRoutes = tool('onebusaway_search_routes', {
   enrichment: {
     query: z.string().describe('Route name/number query sent to the API.'),
     count: z.number().describe('Number of routes returned.'),
+    truncated: z.boolean().optional().describe('True when matching routes exceeded maxCount.'),
+    shown: z.number().optional().describe('Number of routes returned when results were truncated.'),
+    cap: z.number().optional().describe('The maxCount limit applied to truncated results.'),
     notice: z
       .string()
       .optional()
@@ -95,9 +98,12 @@ export const searchRoutes = tool('onebusaway_search_routes', {
         `No routes matched "${input.query}". Try onebusaway_find_routes with lat/lon near the service area, or onebusaway_list_routes_for_agency with a known agency ID.`,
       );
     } else if (result.limitExceeded) {
-      ctx.enrich.notice(
-        'Results truncated — more routes match than were returned. Raise maxCount or use a more specific query to see all matches.',
-      );
+      ctx.enrich.truncated({
+        shown: result.routes.length,
+        cap: input.maxCount,
+        guidance:
+          'Results truncated — more routes match than were returned. Raise maxCount or use a more specific query to see all matches.',
+      });
     }
 
     return { routes: result.routes, limitExceeded: result.limitExceeded };

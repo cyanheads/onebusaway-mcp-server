@@ -61,6 +61,9 @@ export const searchStops = tool('onebusaway_search_stops', {
   enrichment: {
     query: z.string().describe('Search query sent to the API.'),
     count: z.number().describe('Number of stops returned.'),
+    truncated: z.boolean().optional().describe('True when matching stops exceeded maxCount.'),
+    shown: z.number().optional().describe('Number of stops returned when results were truncated.'),
+    cap: z.number().optional().describe('The maxCount limit applied to truncated results.'),
     notice: z
       .string()
       .optional()
@@ -86,9 +89,12 @@ export const searchStops = tool('onebusaway_search_stops', {
         `No stops matched "${input.query}". Try a different name fragment, a stop code, or use onebusaway_find_stops with lat/lon coordinates.`,
       );
     } else if (result.limitExceeded) {
-      ctx.enrich.notice(
-        'Results truncated — more stops match than were returned. Raise maxCount or use a more specific query to see all matches.',
-      );
+      ctx.enrich.truncated({
+        shown: result.stops.length,
+        cap: input.maxCount,
+        guidance:
+          'Results truncated — more stops match than were returned. Raise maxCount or use a more specific query to see all matches.',
+      });
     }
 
     return { stops: result.stops, limitExceeded: result.limitExceeded };

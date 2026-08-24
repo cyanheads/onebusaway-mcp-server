@@ -3,6 +3,7 @@
  * @module tests/tools/input-validation.tool.test
  */
 
+import { z } from '@cyanheads/mcp-ts-core';
 import { describe, expect, it } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
@@ -19,6 +20,49 @@ import { listAgencies } from '@/mcp-server/tools/definitions/list-agencies.tool.
 import { listRoutesForAgency } from '@/mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
 import { searchStops } from '@/mcp-server/tools/definitions/search-stops.tool.js';
+
+const strictToolInputs: readonly {
+  name: string;
+  input: z.ZodType;
+  validInput: Record<string, unknown>;
+}[] = [
+  { name: 'findStops', input: findStops.input, validInput: { lat: 47.6, lon: -122.3 } },
+  { name: 'searchStops', input: searchStops.input, validInput: { query: 'University' } },
+  { name: 'getStop', input: getStop.input, validInput: { stopId: '1_75403' } },
+  { name: 'findRoutes', input: findRoutes.input, validInput: { lat: 47.6, lon: -122.3 } },
+  { name: 'searchRoutes', input: searchRoutes.input, validInput: { query: '44' } },
+  { name: 'getRoute', input: getRoute.input, validInput: { routeId: '1_100259' } },
+  { name: 'listRoutesForAgency', input: listRoutesForAgency.input, validInput: { agencyId: '1' } },
+  { name: 'listAgencies', input: listAgencies.input, validInput: {} },
+  { name: 'getArrivals', input: getArrivals.input, validInput: { stopId: '1_75403' } },
+  { name: 'getTrip', input: getTrip.input, validInput: { tripId: 'trip_abc' } },
+  { name: 'getVehicles', input: getVehicles.input, validInput: { agencyId: '1' } },
+  { name: 'getAlert', input: getAlert.input, validInput: { situationId: '1_sit_001' } },
+  { name: 'getBlock', input: getBlock.input, validInput: { blockId: '1_block_101' } },
+  {
+    name: 'getScheduleForStop',
+    input: getScheduleForStop.input,
+    validInput: { stopId: '1_75403' },
+  },
+  {
+    name: 'getScheduleForRoute',
+    input: getScheduleForRoute.input,
+    validInput: { routeId: '1_100259' },
+  },
+];
+
+describe('SDK v2 strict root tool inputs', () => {
+  it.each(strictToolInputs)(
+    '$name rejects unknown keys and advertises a closed wire schema',
+    ({ input, validInput }) => {
+      expect(() => input.parse({ ...validInput, unexpected: true })).toThrow();
+      expect(z.toJSONSchema(input)).toMatchObject({
+        $schema: 'https://json-schema.org/draft/2020-12/schema',
+        additionalProperties: false,
+      });
+    },
+  );
+});
 
 // ---- findStops ----
 
