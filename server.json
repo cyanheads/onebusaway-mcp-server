@@ -12,14 +12,14 @@
       "url": "https://onebusaway.caseyjhand.com/mcp"
     }
   ],
-  "version": "0.1.13",
+  "version": "0.1.14",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/onebusaway-mcp-server",
       "runtimeHint": "bun",
-      "version": "0.1.13",
+      "version": "0.1.14",
       "packageArguments": [
         {
           "type": "positional",
@@ -47,7 +47,7 @@
         },
         {
           "name": "MCP_LOG_LEVEL",
-          "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
+          "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warning').",
           "format": "string",
           "isRequired": false,
           "default": "info"
@@ -62,7 +62,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/onebusaway-mcp-server",
       "runtimeHint": "bun",
-      "version": "0.1.13",
+      "version": "0.1.14",
       "packageArguments": [
         {
           "type": "positional",
@@ -118,7 +118,7 @@
         },
         {
           "name": "MCP_LOG_LEVEL",
-          "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warn').",
+          "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warning').",
           "format": "string",
           "isRequired": false,
           "default": "info"

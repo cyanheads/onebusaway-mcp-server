@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.14](changelog/0.1.x/0.1.14.md) — 2026-08-23
+
+Adopts MCP 2026-07-28 and SDK v2 with strict tool inputs, structured search truncation metadata, and sparse OneBusAway response handling.
+
 ## [0.1.13](changelog/0.1.x/0.1.13.md) — 2026-07-12
 
 Adds limitExceeded truncation signaling to six collection tools plus find_routes bounding-box search (#18), enforces geographic and positive-count input bounds on four tools (#19), and fixes content[] to preserve exact numeric values and explicit null/empty state across the tool surface (#21).
