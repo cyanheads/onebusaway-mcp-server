@@ -115,14 +115,16 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
       when: 'Stop ID does not exist on this instance.',
       recovery:
         'Search for the stop with onebusaway_find_stops or onebusaway_search_stops to get a valid ID.',
+      thrownBy: 'service',
     },
     {
       reason: 'rate_limited',
       code: JsonRpcErrorCode.RateLimited,
-      retryable: false,
-      when: 'API returned a rate limit response.',
+      retryable: true,
+      when: 'No upstream request slot opened within the queue wait cap, or OneBusAway returned a rate limit response.',
       recovery:
-        'Wait for the shared upstream budget to clear before retrying; one API key is shared across all callers, so the ~20 req/min limit is a global ceiling, not a per-caller quota.',
+        'Wait the seconds given in data.retryAfter, then retry — one API key is shared across all callers, so requests queue against a global budget rather than failing per caller.',
+      thrownBy: 'service',
     },
   ],
 

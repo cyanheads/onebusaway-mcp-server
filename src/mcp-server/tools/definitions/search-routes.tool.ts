@@ -63,6 +63,16 @@ export const searchRoutes = tool('onebusaway_search_routes', {
       when: 'The search/route endpoint returns 404 on this OBA instance (e.g. Puget Sound).',
       recovery:
         'Use onebusaway_find_routes with a lat/lon near the service area, or onebusaway_list_routes_for_agency with a known agency ID to browse all routes.',
+      thrownBy: 'service',
+    },
+    {
+      reason: 'rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      retryable: true,
+      when: 'No upstream request slot opened within the queue wait cap, or OneBusAway returned a rate limit response.',
+      recovery:
+        'Wait the seconds given in data.retryAfter, then retry — one API key is shared across all callers, so requests queue against a global budget rather than failing per caller.',
+      thrownBy: 'service',
     },
   ],
 

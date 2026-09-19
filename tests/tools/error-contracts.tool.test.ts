@@ -98,9 +98,10 @@ describe('getArrivals error contracts', () => {
     await expect(getArrivals.handler(input, ctx)).rejects.toThrow();
   });
 
-  it('declares rate_limited as non-retryable — a shared upstream budget should not be auto-retried', () => {
+  it('declares rate_limited as retryable — the pacer queues against the shared budget and reports retryAfter, so a retry is paced rather than blind', () => {
     const entry = getArrivals.errors?.find((e) => e.reason === 'rate_limited');
-    expect(entry?.retryable).toBe(false);
+    expect(entry?.retryable).toBe(true);
+    expect(entry?.recovery).toContain('retryAfter');
   });
 });
 

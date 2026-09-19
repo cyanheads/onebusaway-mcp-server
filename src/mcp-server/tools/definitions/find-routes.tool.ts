@@ -4,6 +4,7 @@
  */
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
@@ -74,6 +75,18 @@ export const findRoutes = tool('onebusaway_find_routes', {
         'True if more routes exist beyond the returned set; narrow the radius or set latSpan/lonSpan to see all.',
       ),
   }),
+
+  errors: [
+    {
+      reason: 'rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      retryable: true,
+      when: 'No upstream request slot opened within the queue wait cap, or OneBusAway returned a rate limit response.',
+      recovery:
+        'Wait the seconds given in data.retryAfter, then retry — one API key is shared across all callers, so requests queue against a global budget rather than failing per caller.',
+      thrownBy: 'service',
+    },
+  ],
 
   // Agent-facing context: count, query echo, and empty-result guidance.
   enrichment: {

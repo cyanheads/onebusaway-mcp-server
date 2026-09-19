@@ -1,15 +1,15 @@
 /**
  * @fileoverview Error-path tests for OneBusAwayService: null-`resp.data` guards
- * (#22), rate-limit retry classification (#16), and not-found recovery hints
- * (#17). Mocks the onebusaway-sdk client so the guards run against the SDK's real
- * null-resolve shape (a resolved `null`, not a thrown error) without hitting the
- * live API.
+ * (#22), rate-limit classification and upstream pacing (#16, #25), and not-found
+ * recovery hints (#17). Mocks the onebusaway-sdk client so the guards run against
+ * the SDK's real null-resolve shape (a resolved `null`, not a thrown error)
+ * without hitting the live API.
  * @module tests/services/onebusaway/onebusaway-service.test
  */
 
-import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
+import { JsonRpcErrorCode, McpError, requestCancelled } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
 
 /**
@@ -54,6 +54,7 @@ vi.mock('onebusaway-sdk', () => {
 });
 
 import {
+  disposeOneBusAwayService,
   getOneBusAwayService,
   initOneBusAwayService,
 } from '@/services/onebusaway/onebusaway-service.js';
@@ -62,12 +63,17 @@ type ErrData = {
   reason?: string;
   id?: string;
   retryable?: boolean;
+  retryAfter?: number;
+  queueDepth?: number;
   recovery?: { hint?: string };
 };
 
 const mockConfig: ServerConfig = {
   apiKey: 'TEST',
   baseUrl: 'https://api.pugetsound.onebusaway.org',
+  rateLimitRequests: 20,
+  rateLimitWindowMs: 60_000,
+  rateLimitMaxWaitMs: 45_000,
 };
 
 let ctx: ReturnType<typeof createMockContext>;
@@ -76,6 +82,11 @@ beforeEach(() => {
   vi.clearAllMocks();
   initOneBusAwayService(mockConfig);
   ctx = createMockContext();
+});
+
+afterEach(() => {
+  disposeOneBusAwayService();
+  vi.useRealTimers();
 });
 
 /** Resolves a service promise to the rejected McpError for assertion. */
@@ -188,10 +199,10 @@ describe('coordinate/no-input null resp.data → ServiceUnavailable, never NotFo
   });
 });
 
-// ---- #16: rate-limit retry classification ----
+// ---- #16, #25: rate-limit classification ----
 
-describe('rate-limit classification (#16)', () => {
-  it('RateLimitError → RateLimited, retryable:false, shared-budget wording (no "per IP")', async () => {
+describe('rate-limit classification (#16, #25)', () => {
+  it('RateLimitError → RateLimited, retryable:true — the pacer holds the gate closed for retryAfter, so a retry is paced rather than blind', async () => {
     h.methods.arrivalAndDeparture.list.mockRejectedValue(
       new h.RateLimitError('429 Too Many Requests'),
     );
@@ -199,9 +210,121 @@ describe('rate-limit classification (#16)', () => {
     expect(err.code).toBe(JsonRpcErrorCode.RateLimited);
     const data = err.data as ErrData;
     expect(data.reason).toBe('rate_limited');
-    expect(data.retryable).toBe(false);
-    expect(err.message).toMatch(/shared|global/i);
-    expect(err.message).not.toMatch(/per IP/i);
+    expect(data.retryable).toBe(true);
+    // The cooldown the service holds the gate for — not the 60 s window or the 45 s wait cap.
+    expect(data.retryAfter).toBe(5);
+    expect(err.message).toContain('5');
+    expect(err.message).not.toMatch(/will not clear it any faster/i);
+    expect(data.recovery?.hint).toMatch(/shared|global/i);
+    expect(data.recovery?.hint).not.toMatch(/per IP/i);
+  });
+});
+
+// ---- #25: upstream requests are paced against the shared key budget ----
+
+describe('upstream pacing (#25)', () => {
+  /** Issues one paced upstream call, tagged by `query` so dispatch order is observable. */
+  function call(query: string, callCtx = ctx): Promise<unknown> {
+    return getOneBusAwayService().searchStops({ query }, callCtx);
+  }
+
+  /** The `query` of each call that actually reached the SDK, in dispatch order. */
+  function dispatched(): string[] {
+    return h.methods.searchForStop.list.mock.calls.map((c) => (c[0] as { input: string }).input);
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+    // `searchStops` reads an absent `data` as an empty result — the smallest success payload.
+    h.methods.searchForStop.list.mockResolvedValue({ data: null });
+  });
+
+  it('dispatches every call inside the budget immediately', async () => {
+    initOneBusAwayService({ ...mockConfig, rateLimitRequests: 3, rateLimitWindowMs: 60_000 });
+    await Promise.all([call('a'), call('b'), call('c')]);
+    expect(dispatched()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('holds calls past the budget until the window slides, dispatching them FIFO', async () => {
+    initOneBusAwayService({ ...mockConfig, rateLimitRequests: 2, rateLimitWindowMs: 1_000 });
+    const pending = [call('a'), call('b'), call('c'), call('d')];
+    expect(dispatched()).toEqual(['a', 'b']);
+
+    await vi.advanceTimersByTimeAsync(999);
+    expect(dispatched()).toEqual(['a', 'b']);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(dispatched()).toEqual(['a', 'b', 'c', 'd']);
+    await Promise.all(pending);
+  });
+
+  it('sheds a call whose projected wait exceeds the cap, spending no upstream request', async () => {
+    initOneBusAwayService({
+      ...mockConfig,
+      rateLimitRequests: 1,
+      rateLimitWindowMs: 10_000,
+      rateLimitMaxWaitMs: 5_000,
+    });
+    await call('a');
+
+    const err = await caught(call('b'));
+    expect(err).toBeInstanceOf(McpError);
+    expect(err.code).toBe(JsonRpcErrorCode.RateLimited);
+    const data = err.data as ErrData;
+    expect(data.reason).toBe('rate_limited');
+    expect(data.retryable).toBe(true);
+    // Seconds until the 10 s window frees a slot — not the 5 s wait cap or the 5 s cooldown.
+    expect(data.retryAfter).toBe(10);
+    expect(data.queueDepth).toBe(0);
+    expect(err.message).toContain('10');
+    expect(data.recovery?.hint).toContain('10');
+    expect(dispatched()).toEqual(['a']);
+  });
+
+  it('closes the shared gate on an upstream rate limit — the next call waits for the cooldown', async () => {
+    initOneBusAwayService(mockConfig);
+    h.methods.searchForStop.list.mockRejectedValueOnce(new h.RateLimitError('429 Too Many'));
+
+    const err = await caught(call('a'));
+    expect(err.code).toBe(JsonRpcErrorCode.RateLimited);
+    expect((err.data as ErrData).retryAfter).toBe(5);
+
+    const queued = call('b');
+    expect(dispatched()).toEqual(['a']);
+
+    await vi.advanceTimersByTimeAsync(4_999);
+    expect(dispatched()).toEqual(['a']);
+
+    await vi.advanceTimersByTimeAsync(1);
+    expect(dispatched()).toEqual(['a', 'b']);
+    await queued;
+  });
+
+  it('rejects a queued call when ctx.signal aborts, without reaching upstream', async () => {
+    initOneBusAwayService({ ...mockConfig, rateLimitRequests: 1, rateLimitWindowMs: 10_000 });
+    await call('a');
+
+    const controller = new AbortController();
+    const queued = caught(call('b', createMockContext({ signal: controller.signal })));
+    expect(dispatched()).toEqual(['a']);
+
+    controller.abort(requestCancelled('Client cancelled the request.'));
+    expect((await queued).code).toBe(JsonRpcErrorCode.RequestCancelled);
+    expect(dispatched()).toEqual(['a']);
+  });
+
+  it('disposal rejects queued waiters and leaves the service re-initializable', async () => {
+    initOneBusAwayService({ ...mockConfig, rateLimitRequests: 1, rateLimitWindowMs: 10_000 });
+    await call('a');
+    const queued = caught(call('b'));
+
+    disposeOneBusAwayService();
+    expect((await queued).code).toBe(JsonRpcErrorCode.RequestCancelled);
+    expect(dispatched()).toEqual(['a']);
+
+    initOneBusAwayService(mockConfig);
+    await call('c');
+    expect(dispatched()).toEqual(['a', 'c']);
   });
 });
 

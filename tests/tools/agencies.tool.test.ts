@@ -3,10 +3,11 @@
  * @module tests/tools/agencies.tool.test
  */
 
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { listAgencies } from '@/mcp-server/tools/definitions/list-agencies.tool.js';
 import { expectContentParity } from './format-parity.helper.js';
+import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
   getOneBusAwayService: vi.fn(),
@@ -25,7 +26,7 @@ beforeEach(() => {
 
 describe('listAgencies', () => {
   it('returns agencies from service with limitExceeded flag', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listAgencies);
     mockService.listAgencies.mockResolvedValue({
       agencies: [
         {
@@ -48,7 +49,7 @@ describe('listAgencies', () => {
   });
 
   it('enriches with count', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listAgencies);
     mockService.listAgencies.mockResolvedValue({
       agencies: [
         {
@@ -71,7 +72,7 @@ describe('listAgencies', () => {
   });
 
   it('enriches with notice when no agencies found', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listAgencies);
     mockService.listAgencies.mockResolvedValue({ agencies: [], limitExceeded: false });
     const input = listAgencies.input.parse({});
     await listAgencies.handler(input, ctx);
@@ -81,7 +82,7 @@ describe('listAgencies', () => {
   });
 
   it('enriches with truncation notice when limitExceeded', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listAgencies);
     mockService.listAgencies.mockResolvedValue({
       agencies: [
         {
@@ -103,7 +104,7 @@ describe('listAgencies', () => {
   });
 
   it('returns empty agencies when none found', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listAgencies);
     mockService.listAgencies.mockResolvedValue({ agencies: [], limitExceeded: false });
     const input = listAgencies.input.parse({});
     const result = await listAgencies.handler(input, ctx);
@@ -111,7 +112,7 @@ describe('listAgencies', () => {
   });
 
   it('propagates service errors', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listAgencies);
     mockService.listAgencies.mockRejectedValue(new Error('Service unavailable'));
     const input = listAgencies.input.parse({});
     await expect(listAgencies.handler(input, ctx)).rejects.toThrow();

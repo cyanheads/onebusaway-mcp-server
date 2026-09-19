@@ -92,6 +92,16 @@ export const getBlock = tool('onebusaway_get_block', {
       when: 'Block ID does not exist on this instance.',
       recovery:
         'Obtain a blockId from onebusaway_get_trip. First call onebusaway_get_arrivals to get a tripId, then onebusaway_get_trip to retrieve the blockId.',
+      thrownBy: 'service',
+    },
+    {
+      reason: 'rate_limited',
+      code: JsonRpcErrorCode.RateLimited,
+      retryable: true,
+      when: 'No upstream request slot opened within the queue wait cap, or OneBusAway returned a rate limit response.',
+      recovery:
+        'Wait the seconds given in data.retryAfter, then retry — one API key is shared across all callers, so requests queue against a global budget rather than failing per caller.',
+      thrownBy: 'service',
     },
   ],
 

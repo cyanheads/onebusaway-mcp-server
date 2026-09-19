@@ -25,11 +25,15 @@ import { listAgencies } from './mcp-server/tools/definitions/list-agencies.tool.
 import { listRoutesForAgency } from './mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from './mcp-server/tools/definitions/search-routes.tool.js';
 import { searchStops } from './mcp-server/tools/definitions/search-stops.tool.js';
-import { initOneBusAwayService } from './services/onebusaway/onebusaway-service.js';
+import {
+  disposeOneBusAwayService,
+  initOneBusAwayService,
+} from './services/onebusaway/onebusaway-service.js';
 
 await createApp({
   name: 'onebusaway-mcp-server',
   title: 'onebusaway-mcp-server',
+  sessionMode: 'stateless',
   // Public hosted catalog — serve full inventory without auth gate.
   landing: { requireAuth: false },
   tools: [
@@ -61,5 +65,8 @@ await createApp({
     '- OneBusAway does not include trip planning — direct users to Google Maps or Transit app for routing',
   setup() {
     initOneBusAwayService(getServerConfig());
+  },
+  teardown() {
+    disposeOneBusAwayService();
   },
 });

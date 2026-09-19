@@ -46,6 +46,27 @@
           "default": "https://api.pugetsound.onebusaway.org"
         },
         {
+          "name": "ONEBUSAWAY_RATE_LIMIT_REQUESTS",
+          "description": "Upstream requests the pacer allows per window.",
+          "format": "string",
+          "isRequired": false,
+          "default": "20"
+        },
+        {
+          "name": "ONEBUSAWAY_RATE_LIMIT_WINDOW_MS",
+          "description": "Width of the pacer's sliding rate window, in milliseconds.",
+          "format": "string",
+          "isRequired": false,
+          "default": "60000"
+        },
+        {
+          "name": "ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS",
+          "description": "Longest a call may wait in the pacer queue, in milliseconds. Keep it under the SDK client's 60 s request timeout.",
+          "format": "string",
+          "isRequired": false,
+          "default": "45000"
+        },
+        {
           "name": "MCP_LOG_LEVEL",
           "description": "Sets the minimum log level for output (e.g., 'debug', 'info', 'warning').",
           "format": "string",
@@ -87,6 +108,27 @@
           "format": "string",
           "isRequired": false,
           "default": "https://api.pugetsound.onebusaway.org"
+        },
+        {
+          "name": "ONEBUSAWAY_RATE_LIMIT_REQUESTS",
+          "description": "Upstream requests the pacer allows per window.",
+          "format": "string",
+          "isRequired": false,
+          "default": "20"
+        },
+        {
+          "name": "ONEBUSAWAY_RATE_LIMIT_WINDOW_MS",
+          "description": "Width of the pacer's sliding rate window, in milliseconds.",
+          "format": "string",
+          "isRequired": false,
+          "default": "60000"
+        },
+        {
+          "name": "ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS",
+          "description": "Longest a call may wait in the pacer queue, in milliseconds. Keep it under the SDK client's 60 s request timeout.",
+          "format": "string",
+          "isRequired": false,
+          "default": "45000"
         },
         {
           "name": "MCP_HTTP_HOST",

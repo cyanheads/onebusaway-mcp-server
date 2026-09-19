@@ -3,7 +3,7 @@
  * @module tests/tools/edge-cases.tool.test
  */
 
-import { createMockContext, getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
@@ -58,7 +58,7 @@ const NOW_MS = 1748000000000;
 
 describe('findStops edge cases', () => {
   it('handles unicode stop name in output correctly', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(findStops);
     const unicodeStop = {
       id: '1_75403',
       code: '75403',
@@ -179,7 +179,7 @@ describe('getStop edge cases', () => {
 
 describe('listAgencies edge cases', () => {
   it('handles agency with null phone — formats without null string', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listAgencies);
     mockService.listAgencies.mockResolvedValue({
       agencies: [
         {
@@ -202,7 +202,7 @@ describe('listAgencies edge cases', () => {
   });
 
   it('formats multiple agencies in a single output block', async () => {
-    const ctx = createMockContext();
+    const ctx = createToolContext(listAgencies);
     mockService.listAgencies.mockResolvedValue({
       agencies: [
         {
