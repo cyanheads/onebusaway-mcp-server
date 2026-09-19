@@ -1,7 +1,7 @@
 # Developer Protocol
 
 **Server:** onebusaway-mcp-server
-**Version:** 0.1.14
+**Version:** 0.1.15
 **Package:** [@cyanheads/onebusaway-mcp-server](https://www.npmjs.com/package/@cyanheads/onebusaway-mcp-server)
 **Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.6`
 **Engines:** Bun ≥1.4.0, Node ≥24.0.0

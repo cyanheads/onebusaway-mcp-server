@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.1.15](changelog/0.1.x/0.1.15.md) — 2026-09-19
+
+Every OneBusAway call now runs through a FIFO pacer sized to the shared API-key budget, failing rate_limited with a retryable, retryAfter-carrying error instead of spending an upstream request; adopts mcp-ts-core 0.13.6.
+
 ## [0.1.14](changelog/0.1.x/0.1.14.md) — 2026-08-23
 
 Adopts MCP 2026-07-28 and SDK v2 with strict tool inputs, structured search truncation metadata, and sparse OneBusAway response handling.
