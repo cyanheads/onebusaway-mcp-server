@@ -17,6 +17,10 @@ export default mergeConfig(
   defineConfig({
     resolve: { alias },
     test: {
+      coverage: {
+        // Composition root: createApp() wiring only, exercised by the stdio/HTTP boot, not unit tests.
+        exclude: ['src/index.ts'],
+      },
       projects: [
         {
           extends: true,
