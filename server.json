@@ -12,14 +12,14 @@
       "url": "https://onebusaway.caseyjhand.com/mcp"
     }
   ],
-  "version": "0.1.15",
+  "version": "0.2.0",
   "packages": [
     {
       "registryType": "npm",
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/onebusaway-mcp-server",
       "runtimeHint": "bun",
-      "version": "0.1.15",
+      "version": "0.2.0",
       "packageArguments": [
         {
           "type": "positional",
@@ -83,7 +83,7 @@
       "registryBaseUrl": "https://registry.npmjs.org",
       "identifier": "@cyanheads/onebusaway-mcp-server",
       "runtimeHint": "bun",
-      "version": "0.1.15",
+      "version": "0.2.0",
       "packageArguments": [
         {
           "type": "positional",

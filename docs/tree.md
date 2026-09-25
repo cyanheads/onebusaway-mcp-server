@@ -1,6 +1,6 @@
 # onebusaway-mcp-server - Directory Structure
 
-Generated on: 2026-09-19 19:04:18
+Generated on: 2026-09-25 04:43:34
 
 ```text
 onebusaway-mcp-server/
@@ -25,6 +25,7 @@ onebusaway-mcp-server/
 │   └── settings.json
 ├── changelog/
 │   ├── 0.1.x/
+│   ├── 0.2.x/
 │   └── template.md
 ├── docs/
 │   ├── design.md
@@ -153,6 +154,7 @@ onebusaway-mcp-server/
 │   │       │   ├── get-route.tool.ts
 │   │       │   ├── get-schedule-for-route.tool.ts
 │   │       │   ├── get-schedule-for-stop.tool.ts
+│   │       │   ├── get-stop-context.tool.ts
 │   │       │   ├── get-stop.tool.ts
 │   │       │   ├── get-trip.tool.ts
 │   │       │   ├── get-vehicles.tool.ts
@@ -160,6 +162,8 @@ onebusaway-mcp-server/
 │   │       │   ├── list-routes-for-agency.tool.ts
 │   │       │   ├── search-routes.tool.ts
 │   │       │   └── search-stops.tool.ts
+│   │       ├── alert-shared.ts
+│   │       ├── arrivals-shared.ts
 │   │       └── format-helpers.ts
 │   ├── services/
 │   │   └── onebusaway/
@@ -169,12 +173,18 @@ onebusaway-mcp-server/
 ├── tests/
 │   ├── config/
 │   │   └── server-config.test.ts
+│   ├── fixtures/
+│   │   ├── arrivals-and-departures-1_570.json
+│   │   ├── load-fixture.helper.ts
+│   │   └── situation-1_94915.json
 │   ├── prompts/
 │   ├── resources/
 │   │   └── onebusaway.resource.test.ts
 │   ├── services/
 │   │   └── onebusaway/
-│   │       └── onebusaway-service.test.ts
+│   │       ├── onebusaway-service-mapping.test.ts
+│   │       ├── onebusaway-service.test.ts
+│   │       └── upstream-error-classification.test.ts
 │   └── tools/
 │       ├── agencies.tool.test.ts
 │       ├── alerts-and-blocks.tool.test.ts
@@ -186,6 +196,7 @@ onebusaway-mcp-server/
 │       ├── routes.tool.test.ts
 │       ├── schedules.tool.test.ts
 │       ├── security.tool.test.ts
+│       ├── stop-context.tool.test.ts
 │       ├── stops.tool.test.ts
 │       ├── tool-context.helper.ts
 │       ├── trip.tool.test.ts

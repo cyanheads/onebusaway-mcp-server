@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-09-24 · ⚠️ Breaking
+
+New onebusaway_get_stop_context returns a stop's details, arrivals, and full alert detail from one upstream request; get_arrivals now lists stop-level alerts, arrival windows, trip service dates, and schedule dates are validated at the schema, and an upstream 400 is a non-retryable validation error.
+
 ## [0.1.15](changelog/0.1.x/0.1.15.md) — 2026-09-19
 
 Every OneBusAway call now runs through a FIFO pacer sized to the shared API-key budget, failing rate_limited with a retryable, retryAfter-carrying error instead of spending an upstream request; adopts mcp-ts-core 0.13.6.
