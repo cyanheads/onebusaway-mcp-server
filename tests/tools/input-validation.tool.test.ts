@@ -4,7 +4,9 @@
  */
 
 import { z } from '@cyanheads/mcp-ts-core';
-import { describe, expect, it } from 'vitest';
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
 import { getAlert } from '@/mcp-server/tools/definitions/get-alert.tool.js';
@@ -14,12 +16,57 @@ import { getRoute } from '@/mcp-server/tools/definitions/get-route.tool.js';
 import { getScheduleForRoute } from '@/mcp-server/tools/definitions/get-schedule-for-route.tool.js';
 import { getScheduleForStop } from '@/mcp-server/tools/definitions/get-schedule-for-stop.tool.js';
 import { getStop } from '@/mcp-server/tools/definitions/get-stop.tool.js';
+import { getStopContext } from '@/mcp-server/tools/definitions/get-stop-context.tool.js';
 import { getTrip } from '@/mcp-server/tools/definitions/get-trip.tool.js';
 import { getVehicles } from '@/mcp-server/tools/definitions/get-vehicles.tool.js';
 import { listAgencies } from '@/mcp-server/tools/definitions/list-agencies.tool.js';
 import { listRoutesForAgency } from '@/mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
 import { searchStops } from '@/mcp-server/tools/definitions/search-stops.tool.js';
+
+/** Service stub — a schema rejection must never reach it. */
+vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
+  getOneBusAwayService: vi.fn(),
+}));
+
+import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
+
+const mockService = {
+  getArrivals: vi.fn(),
+  getStopContext: vi.fn(),
+  getTrip: vi.fn(),
+  getScheduleForStop: vi.fn(),
+  getScheduleForRoute: vi.fn(),
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  vi.mocked(getOneBusAwayService).mockReturnValue(mockService as never);
+});
+
+/** The advertised JSON Schema for one input property. */
+function wireProperty(input: z.ZodType, key: string): Record<string, unknown> {
+  const schema = z.toJSONSchema(input) as { properties: Record<string, Record<string, unknown>> };
+  return schema.properties[key]!;
+}
+
+/** Runs the tool through the framework's argument parse and asserts it rejected before the handler. */
+async function expectSchemaRejection(
+  definition: Parameters<typeof runToolContract>[0],
+  args: Record<string, unknown>,
+): Promise<void> {
+  const result = await runToolContract(definition, args as never);
+  expect(result.isError).toBe(true);
+  expect(result.structuredContent).toMatchObject({
+    error: { code: JsonRpcErrorCode.InvalidParams },
+  });
+  expect(getOneBusAwayService).not.toHaveBeenCalled();
+  expect(mockService.getArrivals).not.toHaveBeenCalled();
+  expect(mockService.getStopContext).not.toHaveBeenCalled();
+  expect(mockService.getTrip).not.toHaveBeenCalled();
+  expect(mockService.getScheduleForStop).not.toHaveBeenCalled();
+  expect(mockService.getScheduleForRoute).not.toHaveBeenCalled();
+}
 
 const strictToolInputs: readonly {
   name: string;
@@ -35,6 +82,7 @@ const strictToolInputs: readonly {
   { name: 'listRoutesForAgency', input: listRoutesForAgency.input, validInput: { agencyId: '1' } },
   { name: 'listAgencies', input: listAgencies.input, validInput: {} },
   { name: 'getArrivals', input: getArrivals.input, validInput: { stopId: '1_75403' } },
+  { name: 'getStopContext', input: getStopContext.input, validInput: { stopId: '1_75403' } },
   { name: 'getTrip', input: getTrip.input, validInput: { tripId: 'trip_abc' } },
   { name: 'getVehicles', input: getVehicles.input, validInput: { agencyId: '1' } },
   { name: 'getAlert', input: getAlert.input, validInput: { situationId: '1_sit_001' } },
@@ -364,6 +412,49 @@ describe('getArrivals input validation', () => {
   });
 });
 
+// ---- arrivals window bounds (#28) ----
+
+describe.each([
+  { name: 'getArrivals', definition: getArrivals },
+  { name: 'getStopContext', definition: getStopContext },
+])('$name arrivals window bounds (#28)', ({ definition }) => {
+  it.each([
+    { minutesBefore: -1 },
+    { minutesBefore: 2.5 },
+    { minutesBefore: 61 },
+    { minutesAfter: -1 },
+    { minutesAfter: 2.5 },
+    { minutesAfter: 241 },
+    { minutesAfter: 40000 },
+  ])('rejects %o at the schema, before any service call', async (window) => {
+    await expectSchemaRejection(definition, { stopId: '1_570', ...window });
+  });
+
+  it.each([
+    [{}, 5, 35],
+    [{ minutesBefore: 0, minutesAfter: 0 }, 0, 0],
+    [{ minutesBefore: 60, minutesAfter: 240 }, 60, 240],
+  ])('accepts %o as minutesBefore=%i, minutesAfter=%i', (window, before, after) => {
+    const parsed = definition.input.parse({ stopId: '1_570', ...window });
+    expect(parsed.minutesBefore).toBe(before);
+    expect(parsed.minutesAfter).toBe(after);
+  });
+
+  it('advertises integer bounds in the JSON Schema and states them in the descriptions', () => {
+    const before = wireProperty(definition.input, 'minutesBefore');
+    const after = wireProperty(definition.input, 'minutesAfter');
+    expect(before).toMatchObject({ type: 'integer', minimum: 0, maximum: 60, default: 5 });
+    expect(after).toMatchObject({ type: 'integer', minimum: 0, maximum: 240, default: 35 });
+    expect(before.description).toMatch(/0.*60/);
+    expect(after.description).toMatch(/0.*240/);
+    expect(after.description).toContain('onebusaway_get_schedule_for_stop');
+  });
+});
+
+it('getStopContext advertises the same input schema as getArrivals (#24)', () => {
+  expect(z.toJSONSchema(getStopContext.input)).toEqual(z.toJSONSchema(getArrivals.input));
+});
+
 // ---- getTrip ----
 
 describe('getTrip input validation', () => {
@@ -384,6 +475,28 @@ describe('getTrip input validation', () => {
   it('accepts optional serviceDateMs', () => {
     const result = getTrip.input.parse({ tripId: 'trip_abc', serviceDateMs: 1748000000000 });
     expect(result.serviceDateMs).toBe(1748000000000);
+  });
+
+  it.each([-1, 1.5])(
+    'rejects serviceDateMs %d at the schema, before any service call (#31)',
+    async (serviceDateMs) => {
+      await expectSchemaRejection(getTrip, { tripId: '1_809330291', serviceDateMs });
+    },
+  );
+
+  it('accepts a real midnight-local service date and the 0 boundary (#31)', () => {
+    // 2026-09-24 00:00 America/Los_Angeles, as upstream reports serviceDate.
+    expect(getTrip.input.parse({ tripId: 't', serviceDateMs: 1790233200000 }).serviceDateMs).toBe(
+      1790233200000,
+    );
+    expect(getTrip.input.parse({ tripId: 't', serviceDateMs: 0 }).serviceDateMs).toBe(0);
+  });
+
+  it('advertises serviceDateMs as an integer with minimum 0 (#31)', () => {
+    expect(wireProperty(getTrip.input, 'serviceDateMs')).toMatchObject({
+      type: 'integer',
+      minimum: 0,
+    });
   });
 });
 
@@ -479,5 +592,87 @@ describe('getScheduleForRoute input validation', () => {
   it('accepts optional date', () => {
     const result = getScheduleForRoute.input.parse({ routeId: '1_100259', date: '2026-05-23' });
     expect(result.date).toBe('2026-05-23');
+  });
+});
+
+// ---- schedule date format (#32) ----
+
+describe.each([
+  {
+    name: 'getScheduleForStop',
+    definition: getScheduleForStop,
+    idArgs: { stopId: '1_570' },
+    service: mockService.getScheduleForStop,
+    result: { stopId: '1_570', stopName: '3rd Ave & Union St', serviceDateMs: 0, routes: [] },
+  },
+  {
+    name: 'getScheduleForRoute',
+    definition: getScheduleForRoute,
+    idArgs: { routeId: '1_100229' },
+    service: mockService.getScheduleForRoute,
+    result: { routeId: '1_100229', routeShortName: '5', serviceDateMs: 0, trips: [] },
+  },
+])('$name date must be a real YYYY-MM-DD calendar date (#32)', (tc) => {
+  /** Runs the tool through the full contract path and returns the params the service received. */
+  async function forwarded(args: Record<string, unknown>): Promise<Record<string, unknown>> {
+    tc.service.mockResolvedValue(tc.result);
+    const result = await runToolContract(tc.definition, { ...tc.idArgs, ...args } as never);
+    expect(result.isError).toBeFalsy();
+    expect(tc.service).toHaveBeenCalledTimes(1);
+    return tc.service.mock.calls[0]![0] as Record<string, unknown>;
+  }
+
+  it.each(['2026-05-23', '2024-02-29', '2000-02-29'])(
+    'accepts %s and forwards it unchanged',
+    async (date) => {
+      expect(await forwarded({ date })).toMatchObject({ date });
+    },
+  );
+
+  it('treats an omitted date as today — no date forwarded', async () => {
+    expect(await forwarded({})).not.toHaveProperty('date');
+  });
+
+  it('treats a blank date (form clients send "") as today — no date forwarded', async () => {
+    expect(await forwarded({ date: '' })).not.toHaveProperty('date');
+  });
+
+  it.each([
+    '2026-99-99', // impossible month/day — upstream rolled it over to 2034-06-07
+    '2026-02-30', // impossible day
+    '2026-02-29', // not a leap year
+    '2100-02-29', // century non-leap year
+    'not-a-date',
+    '2026-9-3', // unpadded — upstream accepted it
+    '2026-09-24T12:00:00', // datetime — upstream accepted it, truncated to the date
+    '1790319600000', // epoch milliseconds — upstream read all-digit values as a timestamp
+    '20260924', // compact — upstream read it as epoch ms (1970-01-01)
+    '09/24/2026',
+    ' 2026-05-23',
+  ])('rejects %j at the schema, before any service call', async (date) => {
+    await expectSchemaRejection(tc.definition, { ...tc.idArgs, date });
+  });
+
+  it('names the expected YYYY-MM-DD format on both error surfaces', async () => {
+    const result = await runToolContract(tc.definition, {
+      ...tc.idArgs,
+      date: '2026-02-30',
+    } as never);
+    const error = (result.structuredContent as { error: { message: string } }).error;
+    expect(error.message).toMatch(/date: Expected a real calendar date as YYYY-MM-DD/);
+    const text = (result.content as Array<{ text: string }>).map((b) => b.text).join('\n');
+    expect(text).toContain('YYYY-MM-DD');
+  });
+
+  it('advertises the YYYY-MM-DD format in the JSON Schema, with "" allowed', () => {
+    const date = wireProperty(tc.definition.input, 'date') as {
+      anyOf: Array<Record<string, unknown>>;
+      description: string;
+    };
+    expect(date.anyOf).toContainEqual({ type: 'string', const: '' });
+    expect(date.anyOf).toContainEqual(
+      expect.objectContaining({ type: 'string', format: 'date', pattern: expect.any(String) }),
+    );
+    expect(date.description).toContain('YYYY-MM-DD');
   });
 });

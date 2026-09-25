@@ -9,6 +9,7 @@ import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js
 import { getScheduleForRoute } from '@/mcp-server/tools/definitions/get-schedule-for-route.tool.js';
 import { getScheduleForStop } from '@/mcp-server/tools/definitions/get-schedule-for-stop.tool.js';
 import { getStop } from '@/mcp-server/tools/definitions/get-stop.tool.js';
+import { getStopContext } from '@/mcp-server/tools/definitions/get-stop-context.tool.js';
 import { getTrip } from '@/mcp-server/tools/definitions/get-trip.tool.js';
 import { getVehicles } from '@/mcp-server/tools/definitions/get-vehicles.tool.js';
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
@@ -23,6 +24,7 @@ import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.j
 const mockService = {
   getStop: vi.fn(),
   getArrivals: vi.fn(),
+  getStopContext: vi.fn(),
   getTrip: vi.fn(),
   getVehicles: vi.fn(),
   searchRoutes: vi.fn(),
@@ -102,6 +104,29 @@ describe('getArrivals error contracts', () => {
     const entry = getArrivals.errors?.find((e) => e.reason === 'rate_limited');
     expect(entry?.retryable).toBe(true);
     expect(entry?.recovery).toContain('retryAfter');
+  });
+});
+
+// ---- getStopContext error contracts ----
+
+describe('getStopContext error contracts', () => {
+  it('declares the same failure modes as getArrivals', () => {
+    const summary = (errors: readonly { reason: string; code: number; retryable?: boolean }[]) =>
+      errors.map(({ reason, code, retryable }) => ({ reason, code, retryable }));
+    expect(summary(getStopContext.errors ?? [])).toEqual(summary(getArrivals.errors ?? []));
+  });
+
+  it.each([
+    ['stop_not_found', JsonRpcErrorCode.NotFound],
+    ['rate_limited', JsonRpcErrorCode.RateLimited],
+  ])('surfaces a service-thrown %s unchanged', async (reason, code) => {
+    const ctx = createToolContext(getStopContext);
+    mockService.getStopContext.mockRejectedValue(new McpError(code, 'failed', { reason }));
+    const input = getStopContext.input.parse({ stopId: '1_570' });
+    await expect(getStopContext.handler(input, ctx)).rejects.toMatchObject({
+      code,
+      data: { reason },
+    });
   });
 });
 

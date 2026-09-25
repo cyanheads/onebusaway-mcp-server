@@ -142,6 +142,20 @@ export interface ArrivalsResult {
   stopName: string;
 }
 
+// --- Stop context ---
+
+/** Stop details as an arrivals response's references carry them — without the served-route list. */
+export type StopSummary = Omit<Stop, 'routeIds'>;
+
+export interface StopContextResult {
+  alerts: SituationDetail[];
+  arrivals: ArrivalEntry[];
+  currentTime: number;
+  stop: StopSummary | null;
+  /** Situation IDs the response referenced but left out of `references.situations`. */
+  unresolvedSituationIds: string[];
+}
+
 // --- Trip ---
 
 export interface TripScheduleStop {

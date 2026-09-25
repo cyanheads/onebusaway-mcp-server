@@ -1,0 +1,549 @@
+{
+  "code": 200,
+  "currentTime": 1790307153437,
+  "text": "OK",
+  "version": 2,
+  "data": {
+    "entry": {
+      "arrivalsAndDepartures": [
+        {
+          "actualTrack": "",
+          "arrivalEnabled": true,
+          "blockTripSequence": 15,
+          "departureEnabled": true,
+          "distanceFromStop": -476.34756716989796,
+          "frequency": null,
+          "historicalOccupancy": "",
+          "lastUpdateTime": 1790307087000,
+          "numberOfStopsAway": -2,
+          "occupancyStatus": "EMPTY",
+          "predicted": true,
+          "predictedArrivalInterval": null,
+          "predictedArrivalTime": 1790306954000,
+          "predictedDepartureInterval": null,
+          "predictedDepartureTime": 1790306954000,
+          "predictedOccupancy": "",
+          "routeId": "1_100229",
+          "routeLongName": "",
+          "routeShortName": "5",
+          "scheduledArrivalInterval": null,
+          "scheduledArrivalTime": 1790306910000,
+          "scheduledDepartureInterval": null,
+          "scheduledDepartureTime": 1790306910000,
+          "scheduledTrack": "",
+          "serviceDate": 1790233200000,
+          "situationIds": [],
+          "status": "default",
+          "stopId": "1_570",
+          "stopSequence": 4,
+          "totalStopsInTrip": 55,
+          "tripHeadsign": "Shoreline Greenwood",
+          "tripId": "1_809330291",
+          "tripStatus": {
+            "activeTripId": "1_809330291",
+            "blockTripSequence": 15,
+            "closestStop": "1_600",
+            "closestStopTimeOffset": 38,
+            "distanceAlongTrip": 2367.529850835417,
+            "frequency": null,
+            "lastKnownDistanceAlongTrip": 0,
+            "lastKnownLocation": {
+              "lat": 47.61238479614258,
+              "lon": -122.34088134765625
+            },
+            "lastKnownOrientation": 0,
+            "lastLocationUpdateTime": 1790307087000,
+            "lastUpdateTime": 1790307087000,
+            "nextStop": "1_600",
+            "nextStopTimeOffset": 38,
+            "occupancyCapacity": -1,
+            "occupancyCount": 0,
+            "occupancyStatus": "EMPTY",
+            "orientation": 149.26592648499886,
+            "phase": "in_progress",
+            "position": {
+              "lat": 47.612123652637884,
+              "lon": -122.34043220786704
+            },
+            "predicted": true,
+            "scheduleDeviation": 44,
+            "scheduledDistanceAlongTrip": 2367.529850835417,
+            "serviceDate": 1790233200000,
+            "situationIds": [],
+            "status": "SCHEDULED",
+            "totalDistanceAlongTrip": 18583.3576782044,
+            "vehicleFeatures": [],
+            "vehicleId": "1_8217"
+          },
+          "vehicleId": "1_8217"
+        },
+        {
+          "actualTrack": "",
+          "arrivalEnabled": true,
+          "blockTripSequence": 16,
+          "departureEnabled": true,
+          "distanceFromStop": -320.35224735940574,
+          "frequency": null,
+          "historicalOccupancy": "",
+          "lastUpdateTime": 1790307092000,
+          "numberOfStopsAway": -1,
+          "occupancyStatus": "EMPTY",
+          "predicted": true,
+          "predictedArrivalInterval": null,
+          "predictedArrivalTime": 1790307004000,
+          "predictedDepartureInterval": null,
+          "predictedDepartureTime": 1790307004000,
+          "predictedOccupancy": "",
+          "routeId": "1_100132",
+          "routeLongName": "",
+          "routeShortName": "24",
+          "scheduledArrivalInterval": null,
+          "scheduledArrivalTime": 1790307000000,
+          "scheduledDepartureInterval": null,
+          "scheduledDepartureTime": 1790307000000,
+          "scheduledTrack": "",
+          "serviceDate": 1790233200000,
+          "situationIds": [],
+          "status": "default",
+          "stopId": "1_570",
+          "stopSequence": 4,
+          "totalStopsInTrip": 45,
+          "tripHeadsign": "Magnolia",
+          "tripId": "1_800864301",
+          "tripStatus": {
+            "activeTripId": "1_800864301",
+            "blockTripSequence": 16,
+            "closestStop": "1_590",
+            "closestStopTimeOffset": 0,
+            "distanceAlongTrip": 2211.534531024925,
+            "frequency": null,
+            "lastKnownDistanceAlongTrip": 0,
+            "lastKnownLocation": {
+              "lat": 47.611515045166016,
+              "lon": -122.33941650390625
+            },
+            "lastKnownOrientation": 0,
+            "lastLocationUpdateTime": 1790307092000,
+            "lastUpdateTime": 1790307092000,
+            "nextStop": "1_590",
+            "nextStopTimeOffset": 0,
+            "occupancyCapacity": -1,
+            "occupancyCount": 0,
+            "occupancyStatus": "EMPTY",
+            "orientation": 132.49594915817195,
+            "phase": "in_progress",
+            "position": {
+              "lat": 47.61110226863284,
+              "lon": -122.3390343299206
+            },
+            "predicted": true,
+            "scheduleDeviation": 4,
+            "scheduledDistanceAlongTrip": 2211.534531024925,
+            "serviceDate": 1790233200000,
+            "situationIds": [],
+            "status": "SCHEDULED",
+            "totalDistanceAlongTrip": 13261.502508551723,
+            "vehicleFeatures": [],
+            "vehicleId": "1_8015"
+          },
+          "vehicleId": "1_8015"
+        },
+        {
+          "actualTrack": "",
+          "arrivalEnabled": true,
+          "blockTripSequence": 11,
+          "departureEnabled": true,
+          "distanceFromStop": 379.95561769627966,
+          "frequency": null,
+          "historicalOccupancy": "",
+          "lastUpdateTime": 1790306898000,
+          "numberOfStopsAway": 0,
+          "occupancyStatus": "EMPTY",
+          "predicted": true,
+          "predictedArrivalInterval": null,
+          "predictedArrivalTime": 1790307009000,
+          "predictedDepartureInterval": null,
+          "predictedDepartureTime": 1790307009000,
+          "predictedOccupancy": "",
+          "routeId": "1_102736",
+          "routeLongName": "H-Line Rapid Ride",
+          "routeShortName": "H Line",
+          "scheduledArrivalInterval": null,
+          "scheduledArrivalTime": 1790306760000,
+          "scheduledDepartureInterval": null,
+          "scheduledDepartureTime": 1790306760000,
+          "scheduledTrack": "",
+          "serviceDate": 1790233200000,
+          "situationIds": [],
+          "status": "default",
+          "stopId": "1_570",
+          "stopSequence": 28,
+          "totalStopsInTrip": 31,
+          "tripHeadsign": "Downtown Seattle",
+          "tripId": "1_694055681",
+          "tripStatus": {
+            "activeTripId": "1_694055681",
+            "blockTripSequence": 11,
+            "closestStop": "1_548",
+            "closestStopTimeOffset": -9,
+            "distanceAlongTrip": 20011.93159610493,
+            "frequency": null,
+            "lastKnownDistanceAlongTrip": 0,
+            "lastKnownLocation": {
+              "lat": 47.605567932128906,
+              "lon": -122.33396911621094
+            },
+            "lastKnownOrientation": 0,
+            "lastLocationUpdateTime": 1790306898000,
+            "lastUpdateTime": 1790306898000,
+            "nextStop": "1_570",
+            "nextStopTimeOffset": 111,
+            "occupancyCapacity": -1,
+            "occupancyCount": 0,
+            "occupancyStatus": "EMPTY",
+            "orientation": 132.61579679456233,
+            "phase": "in_progress",
+            "position": {
+              "lat": 47.60574203987514,
+              "lon": -122.33413068325117
+            },
+            "predicted": true,
+            "scheduleDeviation": 249,
+            "scheduledDistanceAlongTrip": 20011.93159610493,
+            "serviceDate": 1790233200000,
+            "situationIds": [],
+            "status": "SCHEDULED",
+            "totalDistanceAlongTrip": 21005.996437715658,
+            "vehicleFeatures": [],
+            "vehicleId": "1_6068"
+          },
+          "vehicleId": "1_6068"
+        }
+      ],
+      "nearbyStopIds": ["40_C05", "40_C05-E-00002"],
+      "situationIds": ["1_94118", "1_94915", "1_94111"],
+      "stopId": "1_570"
+    },
+    "references": {
+      "agencies": [
+        {
+          "disclaimer": "",
+          "email": "main@soundtransit.org",
+          "fareUrl": "https://www.soundtransit.org/ride-with-us/how-to-pay/fares",
+          "id": "40",
+          "lang": "en",
+          "name": "Sound Transit",
+          "phone": "1-888-889-6368",
+          "privateService": false,
+          "timezone": "America/Los_Angeles",
+          "url": "https://www.soundtransit.org"
+        },
+        {
+          "disclaimer": "",
+          "email": "",
+          "fareUrl": "https://kingcounty.gov/en/dept/metro/fares-and-payment/prices",
+          "id": "1",
+          "lang": "EN",
+          "name": "Metro Transit",
+          "phone": "206-553-3000",
+          "privateService": false,
+          "timezone": "America/Los_Angeles",
+          "url": "https://kingcounty.gov/en/dept/metro"
+        }
+      ],
+      "routes": [
+        {
+          "agencyId": "1",
+          "color": "FDB71A",
+          "description": "Arbor Heights-Westwood Village-Downtown Seattle",
+          "id": "1_100101",
+          "longName": "",
+          "nullSafeShortName": "21",
+          "shortName": "21",
+          "textColor": "000000",
+          "type": 3,
+          "url": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/schedule?route=021"
+        },
+        {
+          "agencyId": "1",
+          "color": "FDB71A",
+          "description": "West Magnolia - Downtown Seattle",
+          "id": "1_100132",
+          "longName": "",
+          "nullSafeShortName": "24",
+          "shortName": "24",
+          "textColor": "000000",
+          "type": 3,
+          "url": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/schedule?route=024"
+        },
+        {
+          "agencyId": "1",
+          "color": "FDB71A",
+          "description": "Shoreline CC - Greenwood - Seattle",
+          "id": "1_100229",
+          "longName": "",
+          "nullSafeShortName": "5",
+          "shortName": "5",
+          "textColor": "000000",
+          "type": 3,
+          "url": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/schedule?route=005"
+        },
+        {
+          "agencyId": "1",
+          "color": "9C182F",
+          "description": "Burien TC - Westwood Village - Downtown Seattle",
+          "id": "1_102736",
+          "longName": "H-Line Rapid Ride",
+          "nullSafeShortName": "H Line",
+          "shortName": "H Line",
+          "textColor": "FFFFFF",
+          "type": 3,
+          "url": "https://kingcounty.gov/en/dept/metro/routes-and-service/schedules-and-maps/h-line.html"
+        }
+      ],
+      "situations": [
+        {
+          "activeWindows": [
+            {
+              "from": 1790397000000,
+              "to": 1790400600000
+            }
+          ],
+          "allAffects": [
+            {
+              "agencyId": "1",
+              "applicationId": "",
+              "directionId": "",
+              "routeId": "1_100101",
+              "stopId": "",
+              "tripId": ""
+            }
+          ],
+          "consequenceMessage": "",
+          "consequences": [
+            {
+              "condition": "",
+              "conditionDetails": {
+                "diversionPath": {
+                  "length": 0,
+                  "levels": "",
+                  "points": ""
+                },
+                "diversionStopIds": []
+              }
+            }
+          ],
+          "creationTime": 1790307136276,
+          "description": {
+            "lang": "en",
+            "value": "Reroute will be in effect on each of the games noted below:\r\n\nFriday, September 25 at 9:30 PM-10:30 PM\r\n\nAffected stops:\r\nStop #15206 1st Ave S & S Stacy St (NB)\r\nStop #15212 1st Ave S & S Walker St (NB)\r\nStop #15207 1st Ave S & S Holgate St (NB)\r\nStop #15204 Edgar Martinez Dr S & Occidental Ave S (EB)\r\nStop #15201 1st Ave S & S Atlantic St (SB)\r\nStop #15202 1st Ave S & S Holgate St (SB)\r\nStop #15211 1st Ave S & S Walker St (SB)\r\nStop #15203 1st Ave S & S Stacy St (SB)\r\n\nFor Route 21 to Downtown Seattle get on/off buses at:\r\nStop #15230 1st Ave S & S Lander St (NB)\r\nStop #30570 4th Ave S & S Lander St (NB)\r\nStop #30590 4th Ave S & S Walker St (NB)\r\nStop #30600 4th Ave S & S Holgate St (NB)\r\nStop #30635 4th Ave S & S Royal Brougham Way (NB)\r\n\nFor Route 21 to Westwood Village get on/off buses at:\r\nStop #30636 4th Ave S & I-90 Ramp\r\nStop #30670 4th Ave S & Edgar Martinez Dr S (SB)\r\nStop #30690 4th Ave S & S Holgate St (SB)\r\nStop #30700 4th Ave S & S Walker St (SB)\r\nStop #15380 1st Ave S & S Lander St (SB)"
+          },
+          "id": "1_94118",
+          "publicationWindows": [],
+          "reason": "DEMONSTRATION",
+          "severity": "noImpact",
+          "summary": {
+            "lang": "en",
+            "value": "Route 21 will be affected in both directions after all Mariners home games; stops on portions of 1st Ave S will not be served; use alternate stops on 4th Ave S instead."
+          },
+          "url": {
+            "lang": "en",
+            "value": "https://tripplanner.kingcounty.gov/#/app/nextdepartures/routeheadway/full/21/N/"
+          }
+        },
+        {
+          "activeWindows": [
+            {
+              "from": 1790308800000,
+              "to": 1790312400000
+            }
+          ],
+          "allAffects": [
+            {
+              "agencyId": "1",
+              "applicationId": "",
+              "directionId": "",
+              "routeId": "1_100101",
+              "stopId": "",
+              "tripId": ""
+            }
+          ],
+          "consequenceMessage": "",
+          "consequences": [
+            {
+              "condition": "",
+              "conditionDetails": {
+                "diversionPath": {
+                  "length": 0,
+                  "levels": "",
+                  "points": ""
+                },
+                "diversionStopIds": []
+              }
+            }
+          ],
+          "creationTime": 1790307136276,
+          "description": {
+            "lang": "en",
+            "value": "Reroute will be in effect on each of the games noted below:\r\n\nThursday, September 24 at 9:00 PM-10:00 PM\r\n\nAffected stops:\r\nStop #15206 1st Ave S & S Stacy St (NB)\r\nStop #15212 1st Ave S & S Walker St (NB)\r\nStop #15207 1st Ave S & S Holgate St (NB)\r\nStop #15204 Edgar Martinez Dr S & Occidental Ave S (EB)\r\nStop #15201 1st Ave S & S Atlantic St (SB)\r\nStop #15202 1st Ave S & S Holgate St (SB)\r\nStop #15211 1st Ave S & S Walker St (SB)\r\nStop #15203 1st Ave S & S Stacy St (SB)\r\n\nFor Route 21 to Downtown Seattle get on/off buses at:\r\nStop #15230 1st Ave S & S Lander St (NB)\r\nStop #30570 4th Ave S & S Lander St (NB)\r\nStop #30590 4th Ave S & S Walker St (NB)\r\nStop #30600 4th Ave S & S Holgate St (NB)\r\nStop #30635 4th Ave S & S Royal Brougham Way (NB)\r\n\nFor Route 21 to Westwood Village get on/off buses at:\r\nStop #30636 4th Ave S & I-90 Ramp\r\nStop #30670 4th Ave S & Edgar Martinez Dr S (SB)\r\nStop #30690 4th Ave S & S Holgate St (SB)\r\nStop #30700 4th Ave S & S Walker St (SB)\r\nStop #15380 1st Ave S & S Lander St (SB)"
+          },
+          "id": "1_94111",
+          "publicationWindows": [],
+          "reason": "DEMONSTRATION",
+          "severity": "noImpact",
+          "summary": {
+            "lang": "en",
+            "value": "Route 21 will be affected in both directions after all Mariners home games; stops on portions of 1st Ave S will not be served; use alternate stops on 4th Ave S instead."
+          },
+          "url": {
+            "lang": "en",
+            "value": "https://tripplanner.kingcounty.gov/#/app/nextdepartures/routeheadway/full/21/N/"
+          }
+        },
+        {
+          "activeWindows": [
+            {
+              "from": 1789500600000
+            }
+          ],
+          "allAffects": [
+            {
+              "agencyId": "1",
+              "applicationId": "",
+              "directionId": "",
+              "routeId": "1_100101",
+              "stopId": "",
+              "tripId": ""
+            }
+          ],
+          "consequenceMessage": "",
+          "consequences": [
+            {
+              "condition": "",
+              "conditionDetails": {
+                "diversionPath": {
+                  "length": 0,
+                  "levels": "",
+                  "points": ""
+                },
+                "diversionStopIds": []
+              }
+            }
+          ],
+          "creationTime": 1790307136276,
+          "description": {
+            "lang": "en",
+            "value": "Due to technical problems, real time bus information for Route 21 is currently unavailable in Metro's Online Trip Planner and Text for Departures tool.\r\n\nWhen real time information is not displaying, please refer to the scheduled time for your bus.\r\n\nTransit staff are working to resolve the issue and to restore real time data as soon as possible.\r\n\nWe apologize for the inconvenience and appreciate your patience."
+          },
+          "id": "1_94915",
+          "publicationWindows": [],
+          "reason": "UNKNOWN_CAUSE",
+          "severity": "noImpact",
+          "summary": {
+            "lang": "en",
+            "value": "Real time bus arrival and tracking is currently unavailable for Route 21 in Metro's Online Trip Planner and Text for Departures tool."
+          },
+          "url": {
+            "lang": "en",
+            "value": "https://tripplanner.kingcounty.gov/#/app/tripplanning"
+          }
+        }
+      ],
+      "stopTimes": [],
+      "stops": [
+        {
+          "code": "570",
+          "direction": "NW",
+          "id": "1_570",
+          "lat": 47.608688,
+          "locationType": 0,
+          "lon": -122.3367,
+          "name": "3rd Ave & Union St",
+          "parent": "",
+          "routeIds": [
+            "1_100229",
+            "1_100062",
+            "1_100101",
+            "1_100132",
+            "1_100161",
+            "1_100169",
+            "1_100194",
+            "1_102574",
+            "1_100242",
+            "1_100246",
+            "1_100252",
+            "1_100012",
+            "1_100020",
+            "1_100023",
+            "1_100030",
+            "1_100031",
+            "40_597",
+            "1_102736"
+          ],
+          "staticRouteIds": [
+            "1_100229",
+            "1_100062",
+            "1_100101",
+            "1_100132",
+            "1_100161",
+            "1_100169",
+            "1_100194",
+            "1_102574",
+            "1_100242",
+            "1_100246",
+            "1_100252",
+            "1_100012",
+            "1_100020",
+            "1_100023",
+            "1_100030",
+            "1_100031",
+            "40_597",
+            "1_102736"
+          ],
+          "wheelchairBoarding": "ACCESSIBLE"
+        }
+      ],
+      "trips": [
+        {
+          "blockId": "1_8247505",
+          "directionId": "0",
+          "id": "1_809330291",
+          "peakOffpeak": 0,
+          "routeId": "1_100229",
+          "routeShortName": "",
+          "serviceId": "1_139986",
+          "shapeId": "1_11005003",
+          "timeZone": "",
+          "tripHeadsign": "Shoreline Greenwood",
+          "tripShortName": ""
+        },
+        {
+          "blockId": "1_8246277",
+          "directionId": "0",
+          "id": "1_800864301",
+          "peakOffpeak": 0,
+          "routeId": "1_100132",
+          "routeShortName": "",
+          "serviceId": "1_139986",
+          "shapeId": "1_11024009",
+          "timeZone": "",
+          "tripHeadsign": "Magnolia",
+          "tripShortName": ""
+        },
+        {
+          "blockId": "1_8247299",
+          "directionId": "1",
+          "id": "1_694055681",
+          "peakOffpeak": 0,
+          "routeId": "1_102736",
+          "routeShortName": "",
+          "serviceId": "1_139986",
+          "shapeId": "1_10678003",
+          "timeZone": "",
+          "tripHeadsign": "Downtown Seattle Westwood Village",
+          "tripShortName": ""
+        }
+      ]
+    }
+  }
+}

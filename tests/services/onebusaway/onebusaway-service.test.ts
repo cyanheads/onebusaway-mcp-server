@@ -1,16 +1,18 @@
 /**
  * @fileoverview Error-path tests for OneBusAwayService: null-`resp.data` guards
  * (#22), rate-limit classification and upstream pacing (#16, #25), and not-found
- * recovery hints (#17). Mocks the onebusaway-sdk client so the guards run against
- * the SDK's real null-resolve shape (a resolved `null`, not a thrown error)
- * without hitting the live API.
+ * recovery hints (#17), plus response mapping on recorded live payloads. Mocks the
+ * onebusaway-sdk client so the guards run against the SDK's real null-resolve shape
+ * (a resolved `null`, not a thrown error) without hitting the live API.
  * @module tests/services/onebusaway/onebusaway-service.test
  */
 
 import { JsonRpcErrorCode, McpError, requestCancelled } from '@cyanheads/mcp-ts-core/errors';
-import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ServerConfig } from '@/config/server-config.js';
+import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
+import { contentText } from '../../tools/format-parity.helper.js';
 
 /**
  * Hoisted mock state shared with the `vi.mock('onebusaway-sdk')` factory: the
@@ -21,6 +23,7 @@ const h = vi.hoisted(() => {
   class NotFoundError extends Error {}
   class RateLimitError extends Error {}
   class APIConnectionError extends Error {}
+  class BadRequestError extends Error {}
   const methods = {
     agenciesWithCoverage: { list: vi.fn() },
     stopsForLocation: { list: vi.fn() },
@@ -38,7 +41,7 @@ const h = vi.hoisted(() => {
     block: { retrieve: vi.fn() },
     get: vi.fn(),
   };
-  return { NotFoundError, RateLimitError, APIConnectionError, methods };
+  return { NotFoundError, RateLimitError, APIConnectionError, BadRequestError, methods };
 });
 
 vi.mock('onebusaway-sdk', () => {
@@ -49,6 +52,7 @@ vi.mock('onebusaway-sdk', () => {
     static NotFoundError = h.NotFoundError;
     static RateLimitError = h.RateLimitError;
     static APIConnectionError = h.APIConnectionError;
+    static BadRequestError = h.BadRequestError;
   }
   return { default: MockSDK };
 });
@@ -58,6 +62,7 @@ import {
   getOneBusAwayService,
   initOneBusAwayService,
 } from '@/services/onebusaway/onebusaway-service.js';
+import { arrivalsFixture, loadFixture } from '../../fixtures/load-fixture.helper.js';
 
 type ErrData = {
   reason?: string;
@@ -700,5 +705,126 @@ describe('limitExceeded propagation (#18)', () => {
     const result = await getOneBusAwayService().searchRoutes({ query: 'nope' }, ctx);
     expect(result.limitExceeded).toBe(false);
     expect(result.routes).toEqual([]);
+  });
+});
+
+// ---- Response mapping on recorded live payloads ----
+
+describe('response mapping on recorded live payloads', () => {
+  it('getAlert maps the /situation entry to the SituationDetail shape', async () => {
+    h.methods.get.mockResolvedValue(loadFixture('situation-1_94915.json'));
+    const alert = await getOneBusAwayService().getAlert('1_94915', ctx);
+    expect(alert).toEqual({
+      id: '1_94915',
+      summary:
+        "Real time bus arrival and tracking is currently unavailable for Route 21 in Metro's Online Trip Planner and Text for Departures tool.",
+      description: expect.stringMatching(/^Due to technical problems, real time bus information/),
+      reason: 'UNKNOWN_CAUSE',
+      severity: 'noImpact',
+      // Upstream sends an empty string, which the mapper keeps rather than nulling.
+      consequenceMessage: '',
+      // Empty-string affect fields are dropped; only the populated ones survive.
+      affects: [{ agencyId: '1', routeId: '1_100101' }],
+      // An empty condition with no diversion stops maps to an empty consequence.
+      consequences: [{}],
+      activeWindows: [{ from: 1789500600000 }],
+      url: 'https://tripplanner.kingcounty.gov/#/app/tripplanning',
+    });
+    expect(h.methods.get).toHaveBeenCalledWith('/api/where/situation/1_94915.json');
+  });
+
+  it('getArrivals maps each upstream arrival to the ArrivalEntry shape', async () => {
+    h.methods.arrivalAndDeparture.list.mockResolvedValue(arrivalsFixture());
+    const result = await getOneBusAwayService().getArrivals(
+      { stopId: '1_570', minutesBefore: 5, minutesAfter: 35 },
+      ctx,
+    );
+    expect(h.methods.arrivalAndDeparture.list).toHaveBeenCalledWith('1_570', {
+      minutesBefore: 5,
+      minutesAfter: 35,
+    });
+    expect(result.stopId).toBe('1_570');
+    expect(result.stopName).toBe('3rd Ave & Union St');
+    expect(result.currentTime).toBe(1790307153437);
+    expect(result.arrivals.map((a) => a.routeShortName)).toEqual(['5', '24', 'H Line']);
+    expect(result.arrivals[0]).toEqual({
+      routeShortName: '5',
+      tripHeadsign: 'Shoreline Greenwood',
+      predicted: true,
+      predictedArrivalTime: 1790306954000,
+      scheduledArrivalTime: 1790306910000,
+      scheduleDeviation: 44,
+      vehicleId: '1_8217',
+      vehiclePosition: { lat: 47.612123652637884, lon: -122.34043220786704 },
+      stopsAway: -2,
+      tripId: '1_809330291',
+      routeId: '1_100229',
+      situationIds: [],
+    });
+  });
+
+  it('getArrivals resolves arrival-level situation IDs once each and omits IDs missing from references', async () => {
+    const payload = arrivalsFixture();
+    payload.data.entry.situationIds = [];
+    payload.data.entry.arrivalsAndDepartures[0]!.situationIds = ['1_94915', '1_missing'];
+    payload.data.entry.arrivalsAndDepartures[1]!.situationIds = ['1_94915'];
+    h.methods.arrivalAndDeparture.list.mockResolvedValue(payload);
+
+    const result = await getOneBusAwayService().getArrivals({ stopId: '1_570' }, ctx);
+    expect(result.arrivals[0]!.situationIds).toEqual(['1_94915', '1_missing']);
+    expect(result.situations).toEqual([
+      {
+        id: '1_94915',
+        summary: expect.stringMatching(/^Real time bus arrival and tracking/),
+        description: expect.stringMatching(/^Due to technical problems/),
+      },
+    ]);
+  });
+});
+
+// ---- #29: stop-level situations reach get_arrivals ----
+
+describe('get_arrivals situations include stop-level alerts (#29)', () => {
+  const STOP_LEVEL = ['1_94118', '1_94915', '1_94111'];
+
+  it('a stop-level situation with no matching arrival appears in situations', async () => {
+    // The recorded payload: three stop-level IDs, none on any arrival in the window.
+    const payload = arrivalsFixture();
+    expect(payload.data.entry.situationIds).toEqual(STOP_LEVEL);
+    expect(payload.data.entry.arrivalsAndDepartures.flatMap((a) => a.situationIds)).toEqual([]);
+    h.methods.arrivalAndDeparture.list.mockResolvedValue(payload);
+
+    const result = await getOneBusAwayService().getArrivals({ stopId: '1_570' }, ctx);
+    expect(result.situations.map((s) => s.id)).toEqual(STOP_LEVEL);
+    expect(result.situations[1]).toEqual({
+      id: '1_94915',
+      summary: expect.stringMatching(/^Real time bus arrival and tracking/),
+      description: expect.stringMatching(/^Due to technical problems/),
+    });
+  });
+
+  it('an ID on both the stop and an arrival appears once; unresolved IDs are omitted', async () => {
+    const payload = arrivalsFixture();
+    payload.data.entry.situationIds = ['1_94915', '1_stop_only_missing'];
+    payload.data.entry.arrivalsAndDepartures[0]!.situationIds = ['1_94111', '1_94915'];
+    payload.data.entry.arrivalsAndDepartures[2]!.situationIds = ['1_94111'];
+    h.methods.arrivalAndDeparture.list.mockResolvedValue(payload);
+
+    const result = await getOneBusAwayService().getArrivals({ stopId: '1_570' }, ctx);
+    expect(result.situations.map((s) => s.id)).toEqual(['1_94915', '1_94111']);
+    // Arrival-level IDs are reported unchanged.
+    expect(result.arrivals[0]!.situationIds).toEqual(['1_94111', '1_94915']);
+  });
+
+  it('carries stop-level situations on both structuredContent and content[]', async () => {
+    h.methods.arrivalAndDeparture.list.mockResolvedValue(arrivalsFixture());
+    const result = await runToolContract(getArrivals, { stopId: '1_570' });
+    expect(result.isError).toBeFalsy();
+    const structured = result.structuredContent as { situations: Array<{ id: string }> };
+    expect(structured.situations.map((s) => s.id)).toEqual(STOP_LEVEL);
+    const text = contentText(result.content as Array<{ type: string; text?: string }>);
+    expect(text).toContain('## Service Alerts');
+    for (const id of STOP_LEVEL) expect(text).toContain(`(${id})`);
+    expect(h.methods.arrivalAndDeparture.list).toHaveBeenCalledTimes(1);
   });
 });

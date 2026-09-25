@@ -80,6 +80,32 @@ describe('getArrivals', () => {
     expect(enrichment.notice).toMatch(/no arrivals/i);
   });
 
+  it('empty window below the 240 cap: suggests increasing minutesAfter and names the cap', async () => {
+    const ctx = createToolContext(getArrivals);
+    mockService.getArrivals.mockResolvedValue({ ...ARRIVALS_RESULT, arrivals: [] });
+    await getArrivals.handler(
+      getArrivals.input.parse({ stopId: '1_75403', minutesAfter: 239 }),
+      ctx,
+    );
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toMatch(/increas\w* minutesAfter/i);
+    expect(notice).toContain('240');
+    expect(notice).toContain('onebusaway_get_schedule_for_stop');
+  });
+
+  it('empty window at the 240 cap: points only to the schedule tool, not to minutesAfter', async () => {
+    const ctx = createToolContext(getArrivals);
+    mockService.getArrivals.mockResolvedValue({ ...ARRIVALS_RESULT, arrivals: [] });
+    await getArrivals.handler(
+      getArrivals.input.parse({ stopId: '1_75403', minutesAfter: 240 }),
+      ctx,
+    );
+    const notice = getEnrichment(ctx).notice as string;
+    expect(notice).toMatch(/no arrivals/i);
+    expect(notice).not.toMatch(/(increas|widen)\w* minutesAfter/i);
+    expect(notice).toContain('onebusaway_get_schedule_for_stop');
+  });
+
   it('passes minutesBefore/minutesAfter to service', async () => {
     const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockResolvedValue({ ...ARRIVALS_RESULT, arrivals: [] });

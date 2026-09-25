@@ -6,7 +6,13 @@
  */
 
 import type { Context } from '@cyanheads/mcp-ts-core';
-import { McpError, notFound, rateLimited, serviceUnavailable } from '@cyanheads/mcp-ts-core/errors';
+import {
+  McpError,
+  notFound,
+  rateLimited,
+  serviceUnavailable,
+  validationError,
+} from '@cyanheads/mcp-ts-core/errors';
 import { createPacer, type Pacer } from '@cyanheads/mcp-ts-core/utils';
 import OnebusawaySDK from 'onebusaway-sdk';
 import type { ServerConfig } from '@/config/server-config.js';
@@ -22,8 +28,10 @@ import type {
   Situation,
   SituationDetail,
   Stop,
+  StopContextResult,
   StopScheduleResult,
   StopScheduleRoute,
+  StopSummary,
   TripResult,
   VehicleEntry,
 } from './types.js';
@@ -151,6 +159,116 @@ function notFoundData(id: string, reason: string): Record<string, unknown> {
   return { id, reason, ...(hint && { recovery: { hint } }) };
 }
 
+/** The stop and time window for an arrivals-and-departures-for-stop request. */
+type ArrivalsParams = { stopId: string; minutesBefore?: number; minutesAfter?: number };
+
+/** An arrivals-and-departures-for-stop response body, including the stop-level fields SDK 1.21's type omits. */
+type ArrivalsData = OnebusawaySDK.ArrivalAndDepartureListResponse['data'] & {
+  entry: { situationIds?: string[] };
+};
+
+/** A situation as OneBusAway serves it — `/situation/{id}` entries and `references.situations` share this shape. */
+type RawSituation = {
+  id: string;
+  summary?: { value?: string };
+  description?: { value?: string };
+  reason?: string;
+  severity?: string;
+  consequenceMessage?: string;
+  allAffects?: Array<{ agencyId?: string; routeId?: string; stopId?: string; tripId?: string }>;
+  consequences?: Array<{
+    condition?: string;
+    conditionDetails?: { diversionStopIds?: string[] };
+  }>;
+  activeWindows?: Array<{ from?: number; to?: number }>;
+  url?: { value?: string };
+};
+
+/** Maps a raw situation to the full alert shape, dropping the empty-string fields OBA pads affects with. */
+function toSituationDetail(entry: RawSituation): SituationDetail {
+  return {
+    id: entry.id,
+    summary: entry.summary?.value ?? '',
+    description: entry.description?.value ?? null,
+    reason: entry.reason ?? null,
+    severity: entry.severity ?? null,
+    consequenceMessage: entry.consequenceMessage ?? null,
+    affects: (entry.allAffects ?? []).map((a) => ({
+      ...(a.agencyId && { agencyId: a.agencyId }),
+      ...(a.routeId && { routeId: a.routeId }),
+      ...(a.stopId && { stopId: a.stopId }),
+      ...(a.tripId && { tripId: a.tripId }),
+    })),
+    consequences: (entry.consequences ?? []).map((c) => ({
+      ...(c.condition && { condition: c.condition }),
+      ...(c.conditionDetails?.diversionStopIds?.length && {
+        diversionStopIds: c.conditionDetails.diversionStopIds,
+      }),
+    })),
+    activeWindows: entry.activeWindows ?? [],
+    url: entry.url?.value ?? null,
+  };
+}
+
+/** Maps every upstream arrival at the stop to the domain shape, naming routes from the response's references. */
+function mapArrivals(data: ArrivalsData): ArrivalEntry[] {
+  const routeMap = new Map(data.references.routes.map((r) => [r.id, r]));
+  return data.entry.arrivalsAndDepartures.map((ad) => {
+    const routeRef = routeMap.get(ad.routeId);
+    const status = ad.tripStatus;
+    const predicted = ad.predicted ?? false;
+
+    return {
+      routeShortName: firstNonEmpty(
+        ad.routeShortName,
+        routeRef?.shortName,
+        routeRef?.nullSafeShortName,
+        ad.routeId,
+      ),
+      tripHeadsign: ad.tripHeadsign,
+      predicted,
+      predictedArrivalTime:
+        predicted && ad.predictedArrivalTime > 0 ? ad.predictedArrivalTime : null,
+      scheduledArrivalTime: ad.scheduledArrivalTime,
+      scheduleDeviation: status?.scheduleDeviation ?? 0,
+      vehicleId: status?.vehicleId ?? null,
+      vehiclePosition:
+        status?.position?.lat != null && status?.position?.lon != null
+          ? { lat: status.position.lat, lon: status.position.lon }
+          : null,
+      stopsAway: ad.numberOfStopsAway,
+      tripId: ad.tripId,
+      routeId: ad.routeId,
+      situationIds: ad.situationIds ?? [],
+    };
+  });
+}
+
+/**
+ * Splits the stop's situation IDs into resolved situations and unresolved IDs. The
+ * IDs are the unique union of the stop-level `entry.situationIds` (alerts on the
+ * stop itself, or on a route with no arrival in the window) and every arrival's
+ * own `situationIds` — stop-level first, each ID once.
+ */
+function collectSituations(
+  data: ArrivalsData,
+  arrivals: ArrivalEntry[],
+): { situations: RawSituation[]; unresolvedIds: string[] } {
+  const situationMap = new Map(data.references.situations.map((s) => [s.id, s]));
+  const ids = new Set([
+    ...(data.entry.situationIds ?? []),
+    ...arrivals.flatMap((a) => a.situationIds),
+  ]);
+  const situations: RawSituation[] = [];
+  const unresolvedIds: string[] = [];
+  for (const id of ids) {
+    const situation = situationMap.get(id);
+    if (situation) situations.push(situation);
+    else unresolvedIds.push(id);
+  }
+  return { situations, unresolvedIds };
+}
+
 /** Classifies SDK errors to McpError subclasses. Re-throws McpErrors as-is. */
 function classifyError(
   err: unknown,
@@ -187,6 +305,19 @@ function classifyError(
   }
   if (err instanceof OnebusawaySDK.APIConnectionError) {
     throw serviceUnavailable('Cannot connect to OneBusAway API.', {}, { cause: err });
+  }
+  if (err instanceof OnebusawaySDK.BadRequestError) {
+    // The SDK message is `400 <upstream body>`, which carries OBA's `fieldErrors` naming the rejected input.
+    throw validationError(
+      `OneBusAway rejected the request as invalid: ${err.message}`,
+      {
+        retryable: false,
+        recovery: {
+          hint: 'Correct the input named in the field errors and call again — the same request is rejected every time.',
+        },
+      },
+      { cause: err },
+    );
   }
   throw serviceUnavailable(
     `OneBusAway API error: ${err instanceof Error ? err.message : String(err)}`,
@@ -462,11 +593,16 @@ export class OneBusAwayService {
 
   // ----- Arrivals -----
 
-  getArrivals(
-    params: { stopId: string; minutesBefore?: number; minutesAfter?: number },
+  /**
+   * Issues one paced arrivals-and-departures-for-stop request and maps the body
+   * with `map`. Mapping runs inside the classified block, so a malformed body
+   * surfaces the same way for every caller.
+   */
+  private arrivalsForStop<T>(
+    params: ArrivalsParams,
     ctx: Context,
-  ): Promise<ArrivalsResult> {
-    ctx.log.debug('getArrivals', { stopId: params.stopId });
+    map: (data: ArrivalsData, currentTime: number) => T,
+  ): Promise<T> {
     return this.paced(ctx, async () => {
       try {
         const resp = await this.client.arrivalAndDeparture.list(params.stopId, {
@@ -478,65 +614,59 @@ export class OneBusAwayService {
             `stop "${params.stopId}" not found.`,
             notFoundData(params.stopId, 'stop_not_found'),
           );
-        const refs = resp.data.references;
-        const routeMap = new Map(refs.routes.map((r) => [r.id, r]));
-        const stopMap = new Map(refs.stops.map((s) => [s.id, s]));
-        const situationMap = new Map(refs.situations.map((s) => [s.id, s]));
-
-        const stopRef = stopMap.get(params.stopId);
-        const stopName = stopRef?.name ?? params.stopId;
-
-        const arrivals: ArrivalEntry[] = resp.data.entry.arrivalsAndDepartures.map((ad) => {
-          const routeRef = routeMap.get(ad.routeId);
-          const status = ad.tripStatus;
-          const predicted = ad.predicted ?? false;
-
-          return {
-            routeShortName: firstNonEmpty(
-              ad.routeShortName,
-              routeRef?.shortName,
-              routeRef?.nullSafeShortName,
-              ad.routeId,
-            ),
-            tripHeadsign: ad.tripHeadsign,
-            predicted,
-            predictedArrivalTime:
-              predicted && ad.predictedArrivalTime > 0 ? ad.predictedArrivalTime : null,
-            scheduledArrivalTime: ad.scheduledArrivalTime,
-            scheduleDeviation: status?.scheduleDeviation ?? 0,
-            vehicleId: status?.vehicleId ?? null,
-            vehiclePosition:
-              status?.position?.lat != null && status?.position?.lon != null
-                ? { lat: status.position.lat, lon: status.position.lon }
-                : null,
-            stopsAway: ad.numberOfStopsAway,
-            tripId: ad.tripId,
-            routeId: ad.routeId,
-            situationIds: ad.situationIds ?? [],
-          };
-        });
-
-        // Collect unique situation IDs referenced by arrivals
-        const allSituationIds = new Set(arrivals.flatMap((a) => a.situationIds));
-        const situations: Situation[] = [...allSituationIds]
-          .map((id) => situationMap.get(id))
-          .filter((s): s is NonNullable<typeof s> => s != null)
-          .map((s) => ({
-            id: s.id,
-            summary: s.summary?.value ?? '',
-            description: s.description?.value ?? null,
-          }));
-
-        return {
-          stopId: params.stopId,
-          stopName,
-          currentTime: resp.currentTime,
-          arrivals,
-          situations,
-        };
+        return map(resp.data, resp.currentTime);
       } catch (err) {
         classifyError(err, 'stop', params.stopId, 'stop_not_found');
       }
+    });
+  }
+
+  getArrivals(params: ArrivalsParams, ctx: Context): Promise<ArrivalsResult> {
+    ctx.log.debug('getArrivals', { stopId: params.stopId });
+    return this.arrivalsForStop(params, ctx, (data, currentTime) => {
+      const stopRef = data.references.stops.find((s) => s.id === params.stopId);
+      const arrivals = mapArrivals(data);
+      const situations: Situation[] = collectSituations(data, arrivals).situations.map((s) => ({
+        id: s.id,
+        summary: s.summary?.value ?? '',
+        description: s.description?.value ?? null,
+      }));
+
+      return {
+        stopId: params.stopId,
+        stopName: stopRef?.name ?? params.stopId,
+        currentTime,
+        arrivals,
+        situations,
+      };
+    });
+  }
+
+  /**
+   * Stop details, arrivals, and full alert detail from the single arrivals
+   * request — its references already carry the queried stop and every referenced
+   * situation. The stop drops `routeIds`: the references copy lists only the routes
+   * relevant to this response, not every route serving the stop.
+   */
+  getStopContext(params: ArrivalsParams, ctx: Context): Promise<StopContextResult> {
+    ctx.log.debug('getStopContext', { stopId: params.stopId });
+    return this.arrivalsForStop(params, ctx, (data, currentTime) => {
+      const stopRef = data.references.stops.find((s) => s.id === params.stopId);
+      const arrivals = mapArrivals(data);
+      const { situations, unresolvedIds } = collectSituations(data, arrivals);
+      let stop: StopSummary | null = null;
+      if (stopRef) {
+        const { routeIds: _served, ...summary } = normalizeStop(stopRef);
+        stop = summary;
+      }
+
+      return {
+        stop,
+        currentTime,
+        arrivals,
+        alerts: situations.map(toSituationDetail),
+        unresolvedSituationIds: unresolvedIds,
+      };
     });
   }
 
@@ -809,34 +939,9 @@ export class OneBusAwayService {
       try {
         // The SDK has no dedicated situation endpoint — call the REST API directly.
         // client.get() is public on the base APIClient class (core.d.ts line 105).
-        const resp = await this.client.get<
-          unknown,
-          {
-            data: {
-              entry: {
-                id: string;
-                creationTime: number;
-                summary?: { value?: string };
-                description?: { value?: string };
-                reason?: string;
-                severity?: string;
-                consequenceMessage?: string;
-                allAffects?: Array<{
-                  agencyId?: string;
-                  routeId?: string;
-                  stopId?: string;
-                  tripId?: string;
-                }>;
-                consequences?: Array<{
-                  condition?: string;
-                  conditionDetails?: { diversionStopIds?: string[] };
-                }>;
-                activeWindows?: Array<{ from?: number; to?: number }>;
-                url?: { value?: string };
-              };
-            };
-          }
-        >(`/api/where/situation/${situationId}.json`);
+        const resp = await this.client.get<unknown, { data: { entry: RawSituation } }>(
+          `/api/where/situation/${situationId}.json`,
+        );
 
         if (!resp?.data)
           throw notFound(
@@ -850,28 +955,7 @@ export class OneBusAwayService {
             notFoundData(situationId, 'situation_not_found'),
           );
 
-        return {
-          id: entry.id,
-          summary: entry.summary?.value ?? '',
-          description: entry.description?.value ?? null,
-          reason: entry.reason ?? null,
-          severity: entry.severity ?? null,
-          consequenceMessage: entry.consequenceMessage ?? null,
-          affects: (entry.allAffects ?? []).map((a) => ({
-            ...(a.agencyId && { agencyId: a.agencyId }),
-            ...(a.routeId && { routeId: a.routeId }),
-            ...(a.stopId && { stopId: a.stopId }),
-            ...(a.tripId && { tripId: a.tripId }),
-          })),
-          consequences: (entry.consequences ?? []).map((c) => ({
-            ...(c.condition && { condition: c.condition }),
-            ...(c.conditionDetails?.diversionStopIds?.length && {
-              diversionStopIds: c.conditionDetails.diversionStopIds,
-            }),
-          })),
-          activeWindows: entry.activeWindows ?? [],
-          url: entry.url?.value ?? null,
-        };
+        return toSituationDetail(entry);
       } catch (err) {
         classifyError(err, 'situation', situationId, 'situation_not_found');
       }

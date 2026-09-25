@@ -1,0 +1,64 @@
+{
+  "code": 200,
+  "currentTime": 1790307396360,
+  "data": {
+    "entry": {
+      "activeWindows": [
+        {
+          "from": 1789500600000
+        }
+      ],
+      "allAffects": [
+        {
+          "agencyId": "1",
+          "applicationId": "",
+          "directionId": "",
+          "routeId": "1_100101",
+          "stopId": "",
+          "tripId": ""
+        }
+      ],
+      "consequenceMessage": "",
+      "consequences": [
+        {
+          "condition": "",
+          "conditionDetails": {
+            "diversionPath": {
+              "length": 0,
+              "levels": "",
+              "points": ""
+            },
+            "diversionStopIds": []
+          }
+        }
+      ],
+      "creationTime": 1790307294082,
+      "description": {
+        "lang": "en",
+        "value": "Due to technical problems, real time bus information for Route 21 is currently unavailable in Metro's Online Trip Planner and Text for Departures tool.\r\n\nWhen real time information is not displaying, please refer to the scheduled time for your bus.\r\n\nTransit staff are working to resolve the issue and to restore real time data as soon as possible.\r\n\nWe apologize for the inconvenience and appreciate your patience."
+      },
+      "id": "1_94915",
+      "publicationWindows": [],
+      "reason": "UNKNOWN_CAUSE",
+      "severity": "noImpact",
+      "summary": {
+        "lang": "en",
+        "value": "Real time bus arrival and tracking is currently unavailable for Route 21 in Metro's Online Trip Planner and Text for Departures tool."
+      },
+      "url": {
+        "lang": "en",
+        "value": "https://tripplanner.kingcounty.gov/#/app/tripplanning"
+      }
+    },
+    "references": {
+      "agencies": [],
+      "routes": [],
+      "situations": [],
+      "stopTimes": [],
+      "stops": [],
+      "trips": []
+    }
+  },
+  "text": "OK",
+  "version": 2
+}
