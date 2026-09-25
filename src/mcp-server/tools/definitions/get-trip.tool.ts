@@ -10,7 +10,6 @@ import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.j
 
 /** Format Unix milliseconds as HH:MM. */
 function fmtTimeMs(ms: number): string {
-  if (!ms && ms !== 0) return 'N/A';
   const d = new Date(ms);
   const h = d.getHours().toString().padStart(2, '0');
   const m = d.getMinutes().toString().padStart(2, '0');
@@ -19,7 +18,6 @@ function fmtTimeMs(ms: number): string {
 
 /** Format seconds-from-midnight (GTFS schedule) as HH:MM. */
 function fmtTimeSec(secs: number): string {
-  if (!secs && secs !== 0) return 'N/A';
   const h = Math.floor(secs / 3600)
     .toString()
     .padStart(2, '0');
@@ -38,9 +36,11 @@ export const getTrip = tool('onebusaway_get_trip', {
     tripId: z.string().min(1).describe('Trip ID from an arrivals response or schedule lookup.'),
     serviceDateMs: z
       .number()
+      .int()
+      .min(0)
       .optional()
       .describe(
-        'Service date as Unix milliseconds (midnight local time). Only needed for trips from a previous service day. Omit to use today.',
+        'Service date as Unix milliseconds (midnight local time) — a non-negative integer. Only needed for trips from a previous service day. Omit to use today.',
       ),
     includeSchedule: z
       .boolean()

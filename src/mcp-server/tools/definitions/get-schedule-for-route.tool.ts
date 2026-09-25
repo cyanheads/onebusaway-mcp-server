@@ -9,7 +9,6 @@ import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.j
 
 /** Format seconds-from-midnight (GTFS schedule) as HH:MM. */
 function fmtTimeSec(secs: number): string {
-  if (!secs && secs !== 0) return 'N/A';
   const h = Math.floor(secs / 3600)
     .toString()
     .padStart(2, '0');
@@ -31,7 +30,17 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
       .describe(
         'Agency-prefixed route ID (e.g. "1_100259"). Use onebusaway_find_routes or onebusaway_search_routes to discover IDs.',
       ),
-    date: z.string().optional().describe('ISO 8601 date (e.g. "2026-05-23"). Defaults to today.'),
+    date: z
+      .union([
+        z.literal(''),
+        z.iso
+          .date({ error: 'Expected a real calendar date as YYYY-MM-DD (e.g. "2026-05-23")' })
+          .describe('A real calendar date in YYYY-MM-DD form (e.g. "2026-05-23").'),
+      ])
+      .optional()
+      .describe(
+        'Service date as YYYY-MM-DD (e.g. "2026-05-23"). Must be a real calendar date. Omit or leave blank for today.',
+      ),
   }),
   output: z.object({
     routeId: z.string().describe('The queried route ID.'),

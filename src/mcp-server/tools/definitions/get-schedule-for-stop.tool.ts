@@ -27,9 +27,16 @@ export const getScheduleForStop = tool('onebusaway_get_schedule_for_stop', {
         'Agency-prefixed stop ID (e.g. "1_75403"). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
       ),
     date: z
-      .string()
+      .union([
+        z.literal(''),
+        z.iso
+          .date({ error: 'Expected a real calendar date as YYYY-MM-DD (e.g. "2026-05-23")' })
+          .describe('A real calendar date in YYYY-MM-DD form (e.g. "2026-05-23").'),
+      ])
       .optional()
-      .describe('ISO 8601 date (e.g. "2026-05-23"). Defaults to today in the agency\'s timezone.'),
+      .describe(
+        'Service date as YYYY-MM-DD (e.g. "2026-05-23"). Must be a real calendar date. Omit or leave blank for today in the agency\'s timezone.',
+      ),
   }),
   output: z.object({
     stopId: z.string().describe('The queried stop ID.'),
