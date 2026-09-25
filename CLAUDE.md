@@ -196,6 +196,10 @@ src/
       onebusaway-service.ts             # OneBusAway service — wraps onebusaway-sdk, paces upstream calls, error classification
       types.ts                          # Domain types (Stop, Route, Arrival, Vehicle, etc.)
   mcp-server/
+    tools/
+      arrivals-shared.ts                # Arrivals input schema, arrival shape + renderer (get_arrivals, get_stop_context)
+      alert-shared.ts                   # Full alert shape + renderer (get_alert, get_stop_context)
+      format-helpers.ts                 # content[] rendering helpers (exact numbers, explicit "none")
     tools/definitions/
       list-agencies.tool.ts             # onebusaway_list_agencies
       find-stops.tool.ts                # onebusaway_find_stops
@@ -206,7 +210,10 @@ src/
       get-route.tool.ts                 # onebusaway_get_route
       list-routes-for-agency.tool.ts    # onebusaway_list_routes_for_agency
       get-arrivals.tool.ts              # onebusaway_get_arrivals
+      get-stop-context.tool.ts          # onebusaway_get_stop_context
+      get-alert.tool.ts                 # onebusaway_get_alert
       get-trip.tool.ts                  # onebusaway_get_trip
+      get-block.tool.ts                 # onebusaway_get_block
       get-vehicles.tool.ts              # onebusaway_get_vehicles
       get-schedule-for-stop.tool.ts     # onebusaway_get_schedule_for_stop
       get-schedule-for-route.tool.ts    # onebusaway_get_schedule_for_route
@@ -298,6 +305,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run format` | Auto-fix formatting |
 | `bun run format:unsafe` | Also apply Biome's unsafe fixes; review the diff |
 | `bun run test` | Run tests (Vitest — use `bun run test`, not `bun test`) |
+| `bun run test:coverage` | Run tests with Istanbul coverage; fails below the framework thresholds (94% statements/functions/lines, 87% branches). `src/index.ts` is excluded |
 | `bun run start:stdio` | Production mode (stdio) |
 | `bun run start:http` | Production mode (HTTP) |
 | `bun run changelog:build` | Regenerate `CHANGELOG.md` from `changelog/*.md` |

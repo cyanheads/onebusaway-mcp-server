@@ -6,19 +6,22 @@
 
 | Name | Description | Key Inputs | Annotations |
 |:-----|:------------|:-----------|:------------|
-| `onebusaway_get_arrivals` | Real-time arrivals and departures at a stop. Returns predicted and scheduled times, vehicle positions, schedule deviation, and any active service alerts. | `stopId`, `minutesBefore?`, `minutesAfter?` | `readOnlyHint: true` |
+| `onebusaway_get_arrivals` | Real-time arrivals and departures at a stop. Returns predicted and scheduled times, vehicle positions, schedule deviation, and any active service alerts. | `stopId`, `minutesBefore?` (0–60), `minutesAfter?` (0–240) | `readOnlyHint: true` |
+| `onebusaway_get_stop_context` | Stop details, real-time arrivals, and full detail for every service alert at the stop, from one upstream request. | `stopId`, `minutesBefore?` (0–60), `minutesAfter?` (0–240) | `readOnlyHint: true` |
+| `onebusaway_get_alert` | Full detail for one service alert (situation) by ID. | `situationId` | `readOnlyHint: true` |
+| `onebusaway_get_block` | Every trip one vehicle runs in a service day, in order, with stop times. | `blockId` | `readOnlyHint: true` |
 | `onebusaway_find_stops` | Find bus stops near a location or by stop code. Returns stop IDs, names, served routes, and wheelchair accessibility. | `lat`, `lon`, `radius?`, `query?` | `readOnlyHint: true` |
-| `onebusaway_find_routes` | Find transit routes near a location or search by name. Returns route IDs, short names, descriptions, and agency. | `lat`, `lon`, `radius?`, `query?` | `readOnlyHint: true` |
+| `onebusaway_find_routes` | Find transit routes near a location or search by name. Returns route IDs, short names, descriptions, and agency. | `lat`, `lon`, `radius?`, `latSpan?`, `lonSpan?`, `query?` | `readOnlyHint: true` |
 | `onebusaway_get_stop` | Fetch details for a specific stop by ID. Returns name, coordinates, served routes, and wheelchair accessibility. | `stopId` | `readOnlyHint: true` |
 | `onebusaway_get_route` | Fetch details for a specific route by ID, including schedule URL and route color. | `routeId` | `readOnlyHint: true` |
-| `onebusaway_get_schedule_for_stop` | Full day schedule for a stop — all departures by route and direction. | `stopId`, `date?` | `readOnlyHint: true` |
-| `onebusaway_get_schedule_for_route` | Full day schedule for a route — all trips and stop sequences. | `routeId`, `date?` | `readOnlyHint: true` |
-| `onebusaway_get_trip` | Real-time status and stop sequence for an active trip. Returns vehicle position, schedule deviation, and stops remaining. | `tripId`, `serviceDate?` | `readOnlyHint: true` |
+| `onebusaway_get_schedule_for_stop` | Full day schedule for a stop — all departures by route and direction. | `stopId`, `date?` (`YYYY-MM-DD`) | `readOnlyHint: true` |
+| `onebusaway_get_schedule_for_route` | Full day schedule for a route — all trips and stop sequences. | `routeId`, `date?` (`YYYY-MM-DD`) | `readOnlyHint: true` |
+| `onebusaway_get_trip` | Real-time status and stop sequence for an active trip. Returns vehicle position, schedule deviation, and stops remaining. | `tripId`, `serviceDateMs?`, `includeSchedule?` | `readOnlyHint: true` |
 | `onebusaway_get_vehicles` | Real-time vehicle positions for all active vehicles for an agency, optionally filtered to one route (client-side). | `agencyId`, `routeId?` | `readOnlyHint: true` |
 | `onebusaway_list_agencies` | List all transit agencies served by this OneBusAway instance, with agency IDs needed for other calls. | (none) | `readOnlyHint: true`, `openWorldHint: false` |
 | `onebusaway_list_routes_for_agency` | List all routes operated by an agency. | `agencyId` | `readOnlyHint: true`, `openWorldHint: false` |
-| `onebusaway_search_stops` | Search for stops by name or code string. Useful for resolving a stop name to an ID. | `query` | `readOnlyHint: true` |
-| `onebusaway_search_routes` | Search for routes by name or number. Useful for resolving a route short name (e.g. "44") to a route ID. | `query` | `readOnlyHint: true` |
+| `onebusaway_search_stops` | Search for stops by name or code string. Useful for resolving a stop name to an ID. | `query`, `maxCount?` | `readOnlyHint: true` |
+| `onebusaway_search_routes` | Search for routes by name or number. Useful for resolving a route short name (e.g. "44") to a route ID. | `query`, `maxCount?` | `readOnlyHint: true` |
 
 ### Resources
 
@@ -60,7 +63,7 @@ The server provides real-time arrivals, vehicle tracking, route/stop discovery, 
 |:--------|:------|:--------|
 | `OneBusAwayService` | `onebusaway-sdk` npm client | All tools |
 
-Single service, single SDK client. Initialized once at startup with `baseURL` and `apiKey` from env config, and `maxRetries: 0` to disable the SDK's built-in retry — the service layer's `withRetry` handles retries instead. All tool handlers call through the service — no direct HTTP in handlers.
+Single service, single SDK client. Initialized once at startup with `baseURL` and `apiKey` from env config, and `maxRetries: 0` to disable the SDK's built-in retry — one tool call issues one upstream request. A process-wide pacer (`ONEBUSAWAY_RATE_LIMIT_*`) queues every upstream request against the shared API key's budget and fails a call that gets no slot as retryable `rate_limited`. All tool handlers call through the service — no direct HTTP in handlers.
 
 ---
 
@@ -70,6 +73,9 @@ Single service, single SDK client. Initialized once at startup with `baseURL` an
 |:--------|:---------|:------------|
 | `ONEBUSAWAY_API_KEY` | No (defaults to `TEST`) | API key for the OneBusAway instance. `TEST` works on Puget Sound for development. |
 | `ONEBUSAWAY_BASE_URL` | No (defaults to Puget Sound) | Base URL of the OneBusAway instance. Override to target NYC (`https://bustime.mta.info`), Tampa (`https://api.tampa.onebusaway.org`), or a self-hosted instance. |
+| `ONEBUSAWAY_RATE_LIMIT_REQUESTS` | No (defaults to `20`) | Upstream requests allowed per window, shared by all callers. |
+| `ONEBUSAWAY_RATE_LIMIT_WINDOW_MS` | No (defaults to `60000`) | Width of the sliding rate window, in ms. |
+| `ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS` | No (defaults to `45000`) | Longest a call waits for a slot before failing as `rate_limited`, in ms. |
 
 ---
 
@@ -116,9 +122,11 @@ The primary real-time tool — the most common agent query.
 **Input schema:**
 ```
 stopId: string — Stop ID in agency-prefixed format (e.g. "1_75403" for Metro Transit stop 75403, "40_100239" for Sound Transit).
-minutesBefore: number (default 5) — Include arrivals that departed up to this many minutes ago.
-minutesAfter: number (default 35) — Include arrivals expected within the next N minutes.
+minutesBefore: integer 0–60 (default 5) — Include arrivals that departed up to this many minutes ago.
+minutesAfter: integer 0–240 (default 35) — Include arrivals expected within the next N minutes. Longer horizons belong to onebusaway_get_schedule_for_stop.
 ```
+
+Both bounds are enforced at the schema: OneBusAway binds the two values to a 32-bit int without validation, so negatives shift the window and large values overflow. An empty window's `notice` suggests raising `minutesAfter` only while it is below 240.
 
 **Output schema:**
 ```
@@ -138,7 +146,7 @@ arrivals: Array of:
   tripId: string — For follow-up onebusaway_get_trip calls.
   routeId: string — For follow-up route calls.
   situationIds: string[]
-situations: Array of: — Active service alerts referenced by arrivals.
+situations: Array of: — Active service alerts on the stop itself and those referenced by arrivals, each once.
   id: string
   summary: string
   description: string | null
@@ -147,8 +155,32 @@ situations: Array of: — Active service alerts referenced by arrivals.
 **Error contract:**
 ```
 { reason: 'stop_not_found', code: NotFound, when: 'Stop ID does not exist on this instance', recovery: 'Search for the stop with onebusaway_find_stops or onebusaway_search_stops to get a valid ID.' }
-{ reason: 'rate_limited', code: ServiceUnavailable, retryable: true, when: 'API returned 429', recovery: 'Wait a moment and retry; the Puget Sound instance enforces ~20 req/min per IP.' }
+{ reason: 'rate_limited', code: RateLimited, retryable: true, when: 'No upstream request slot opened within the queue wait cap, or OneBusAway returned a rate limit response', recovery: 'Wait the seconds given in data.retryAfter, then retry.' }
 ```
+
+An upstream HTTP 400 on any tool surfaces as a non-retryable `ValidationError` carrying OneBusAway's field errors.
+
+**Annotations:** `readOnlyHint: true`
+
+---
+
+### `onebusaway_get_stop_context`
+
+**Description:** Everything happening at a stop in one call: the stop's details, its real-time arrivals, and full detail for every service alert on the stop or on any arrival in the window — what `onebusaway_get_stop`, `onebusaway_get_arrivals`, and one `onebusaway_get_alert` per alert would return, from a single `arrivals-and-departures-for-stop` request.
+
+**Input schema:** identical to `onebusaway_get_arrivals` (`stopId`, `minutesBefore`, `minutesAfter`).
+
+**Output schema:**
+```
+stop: { id, code, name, lat, lon, direction, wheelchairBoarding } | null — The onebusaway_get_stop fields minus routeIds (the references copy lists only routes in this response). Null when the response omits the stop.
+currentTime: number — Server time as Unix milliseconds.
+arrivals: Array — Same shape as onebusaway_get_arrivals.
+alerts: Array — Same shape as onebusaway_get_alert; the union of stop-level and arrival-level situation IDs, each once.
+```
+
+A referenced alert missing from the response's references is left out, and the `notice` names it for `onebusaway_get_alert`; a null `stop` points to `onebusaway_get_stop`.
+
+**Error contract:** same as `onebusaway_get_arrivals` (`stop_not_found`, `rate_limited`).
 
 **Annotations:** `readOnlyHint: true`
 
@@ -282,14 +314,16 @@ url: string | null — Agency schedule page URL.
 **Input schema:**
 ```
 stopId: string — Agency-prefixed stop ID.
-date: string? — ISO 8601 date (e.g. "2026-05-23"). Defaults to today in the agency's timezone.
+date: string? — A real calendar date as YYYY-MM-DD (e.g. "2026-05-23"). Omitted or "" means today in the agency's timezone.
 ```
+
+`date` is validated at the schema. OneBusAway parses it leniently — an impossible date such as `2026-99-99` rolls over to another day, an unpadded or datetime form is truncated, and an all-digit value is read as epoch milliseconds — so anything but a real `YYYY-MM-DD` date is rejected before the request.
 
 **Output schema:**
 ```
 stopId: string
 stopName: string
-date: number — Date as Unix ms (start of service day).
+serviceDateMs: number — Upstream's `entry.date` as Unix ms: local midnight of the requested date, or the request time when no date was given.
 routes: Array of:
   routeId: string — For follow-up onebusaway_get_route or onebusaway_get_schedule_for_route calls.
   routeShortName: string
@@ -316,14 +350,14 @@ routes: Array of:
 **Input schema:**
 ```
 routeId: string — Agency-prefixed route ID.
-date: string? — ISO 8601 date. Defaults to today.
+date: string? — A real calendar date as YYYY-MM-DD, validated as for onebusaway_get_schedule_for_stop. Omitted or "" means today.
 ```
 
 **Output schema:**
 ```
 routeId: string
 routeShortName: string
-date: number
+serviceDateMs: number
 trips: Array of:
   tripId: string — For follow-up onebusaway_get_trip calls.
   tripHeadsign: string
@@ -347,7 +381,7 @@ trips: Array of:
 **Input schema:**
 ```
 tripId: string — Trip ID from an arrivals response or schedule lookup.
-serviceDate: number? — Service date as Unix ms (midnight local time). Only needed when looking up a trip from a previous service day that hasn't yet cleared (e.g. an overnight trip that departed yesterday). If omitted, the API uses today.
+serviceDateMs: non-negative integer? — Service date as Unix ms (midnight local time). Only needed when looking up a trip from a previous service day that hasn't yet cleared (e.g. an overnight trip that departed yesterday). If omitted, the API uses today.
 includeSchedule: boolean (default true) — Whether to include the full stop sequence with times.
 ```
 
@@ -356,6 +390,7 @@ includeSchedule: boolean (default true) — Whether to include the full stop seq
 tripId: string
 routeShortName: string
 tripHeadsign: string
+blockId: string | null — For follow-up onebusaway_get_block calls.
 status:
   phase: string — "in_progress" | "layover_before" | "layover_during" | etc.
   predicted: boolean
@@ -365,13 +400,75 @@ status:
   closestStop: string | null — Stop ID of closest stop.
   vehicleId: string | null
   lastUpdateTime: number
-schedule: Array of: { stopId: string, stopName: string, arrivalTime: number, departureTime: number, distanceAlongTrip: number } | null
+schedule: Array of: { stopId: string, stopName: string, arrivalTime: number, departureTime: number, distanceAlongTripMeters: number } | null
 situations: string[] — Active situation IDs.
 ```
 
 **Error contract:**
 ```
 { reason: 'trip_not_found', code: NotFound, when: 'Trip ID not found or not active for the service date', recovery: 'Verify the tripId from an arrivals response; if the trip has completed, fetch the schedule instead.' }
+```
+
+**Annotations:** `readOnlyHint: true`
+
+---
+
+### `onebusaway_get_alert`
+
+**Description:** Full detail for one service alert (situation) by ID. OneBusAway's SDK has no situation endpoint, so the service calls `/api/where/situation/{id}.json` directly.
+
+**Input schema:**
+```
+situationId: string — From onebusaway_get_arrivals (situations[].id or arrivals[].situationIds).
+```
+
+**Output schema:**
+```
+id: string
+summary: string
+description: string | null
+reason: string | null — TPEG reason code.
+severity: string | null
+consequenceMessage: string | null
+affects: Array of: { agencyId?, routeId?, stopId?, tripId? } — Empty-string fields upstream pads with are dropped.
+consequences: Array of: { condition?, diversionStopIds? }
+activeWindows: Array of: { from?: number, to?: number } — Unix ms.
+url: string | null
+```
+
+**Error contract:**
+```
+{ reason: 'situation_not_found', code: NotFound, when: 'Situation ID does not exist on this instance', recovery: 'Obtain situation IDs from onebusaway_get_arrivals.' }
+```
+
+**Annotations:** `readOnlyHint: true`
+
+---
+
+### `onebusaway_get_block`
+
+**Description:** The ordered sequence of trips one vehicle runs in a service day, with stop times. Block IDs come from `onebusaway_get_trip`.
+
+**Input schema:**
+```
+blockId: string — From onebusaway_get_trip.
+```
+
+**Output schema:**
+```
+blockId: string
+activeServiceIds: string[]
+inactiveServiceIds: string[]
+trips: Array of:
+  tripId: string
+  distanceAlongBlock: number — Meters from block start.
+  accumulatedSlackTime: number — Layover seconds before this trip.
+  blockStopTimes: Array of: { stopId: string, arrivalTime: number, departureTime: number, pickupType?: number, dropOffType?: number } — GTFS seconds from midnight.
+```
+
+**Error contract:**
+```
+{ reason: 'block_not_found', code: NotFound, when: 'Block ID does not exist, or the block has no configuration', recovery: 'Obtain a blockId from onebusaway_get_trip.' }
 ```
 
 **Annotations:** `readOnlyHint: true`
@@ -551,6 +648,8 @@ For "is my bus late?":
 
 The arrivals response is designed to answer "is my bus late?" in one call — `scheduleDeviation` on each arrival, plus `situationIds` for active alerts. `onebusaway_get_trip` is the follow-up for "show me where the bus is on the map."
 
+For "what's happening at this stop?", `onebusaway_get_stop_context` returns the stop, its arrivals, and every alert in full from one upstream request — the 2+N-call chain of `get_stop`, `get_arrivals`, and `get_alert` per alert collapsed into one.
+
 ---
 
 ## Design Decisions
@@ -559,7 +658,7 @@ The arrivals response is designed to answer "is my bus late?" in one call — `s
 
 **Decision: use `onebusaway-sdk`.**
 
-The official TypeScript SDK (`onebusaway-sdk` on npm, Stainless-generated from an OpenAPI spec) covers all relevant endpoints, has full TS types, handles retries with exponential backoff by default (2 retries, with 429/408/500+ retried automatically), and supports `baseURL` override for multi-instance targeting. The SDK's retry behavior is a near-exact match to the framework's `withRetry` pattern — using both would double-retry. Plan: disable SDK retries (`maxRetries: 0`) and let the service layer's `withRetry` handle it for consistent behavior visible in telemetry.
+The official TypeScript SDK (`onebusaway-sdk` on npm, Stainless-generated from an OpenAPI spec) covers all relevant endpoints, has full TS types, handles retries with exponential backoff by default (2 retries, with 429/408/500+ retried automatically), and supports `baseURL` override for multi-instance targeting. SDK retries are disabled (`maxRetries: 0`): every retry spends the shared API key's budget, so the service paces requests through a process-wide queue instead of retrying them (see Services).
 
 Direct HTTP would gain nothing here and lose the typed response shapes.
 
@@ -665,3 +764,8 @@ All times are Unix milliseconds (not seconds). Service dates (for grouping trips
 | 2026-05-23 | Omit `trips-for-location` | Live testing returned zero results; `get_vehicles` + route filter is a more reliable substitute. |
 | 2026-05-23 | Omit shape/polyline data | Large encoded strings with no decision-making value for an agent; can be added later if a mapping use case emerges. |
 | 2026-05-23 | Stop + route resources only | Stop/route metadata is stable and ID-addressable; trip/vehicle state changes too fast for cacheable resources. |
+| 2026-09-19 | Pace upstream requests through a process-wide queue instead of retrying | One API key is shared by every caller; a retry spends the same budget that is already exhausted. Supersedes the `withRetry` entry above. |
+| 2026-09-24 | Bound `minutesBefore` to integers 0–60 and `minutesAfter` to 0–240 | OneBusAway computes the window in unchecked 32-bit arithmetic, so out-of-range values return a wrong window as HTTP 200; 240 minutes is already ~31 KB of arrivals, and longer horizons belong to the schedule tools. |
+| 2026-09-24 | Schedule `date` must be a real `YYYY-MM-DD` date (blank = today) | OneBusAway parses dates leniently — impossible dates roll over and all-digit values read as epoch ms — so a malformed date silently returned another day's schedule. |
+| 2026-09-24 | Upstream HTTP 400 → non-retryable `ValidationError` | A 400 is a rejected input; reporting it as `ServiceUnavailable` invited retries that can never succeed. |
+| 2026-09-24 | Add `onebusaway_get_stop_context` instead of widening `get_arrivals` | The arrivals response already carries the stop and every alert in full, so one request replaces 2+N; `get_arrivals` stays lean. The stop omits `routeIds` because the references copy lists only routes in that response. |

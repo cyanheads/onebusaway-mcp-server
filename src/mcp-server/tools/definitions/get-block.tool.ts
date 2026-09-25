@@ -22,7 +22,7 @@ function fmtSec(secs: number): string {
 export const getBlock = tool('onebusaway_get_block', {
   title: 'Get Block Schedule',
   description:
-    "Fetch the full-day block schedule for a vehicle by block ID. A block is the ordered sequence of trips a single vehicle makes in one service day. Returns all trips in order with their stop times. Useful for 'when will this bus return?' and fleet tracking. Block IDs appear in onebusaway_get_trip responses under the schedule block field; obtain a tripId from onebusaway_get_arrivals first.",
+    "Fetch the full-day block schedule for a vehicle by block ID. A block is the ordered sequence of trips a single vehicle makes in one service day. Returns all trips in order with their stop times. Useful for 'when will this bus return?' and fleet tracking. Block IDs appear as blockId in onebusaway_get_trip responses; obtain a tripId from onebusaway_get_arrivals first.",
   annotations: { readOnlyHint: true },
   input: z.object({
     blockId: z

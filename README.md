@@ -1,7 +1,7 @@
 <div align="center">
   <h1>@cyanheads/onebusaway-mcp-server</h1>
   <p><b>Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP. STDIO or Streamable HTTP.</b>
-  <div>15 Tools • 2 Resources</div>
+  <div>16 Tools • 2 Resources</div>
   </p>
 </div>
 
@@ -17,6 +17,10 @@
 
 [![Framework](https://img.shields.io/badge/Built%20on-@cyanheads/mcp--ts--core-67E8F9?style=flat-square)](https://www.npmjs.com/package/@cyanheads/mcp-ts-core)
 
+</div>
+
+<div align="center">
+
 **Public Hosted Server:** [https://onebusaway.caseyjhand.com/mcp](https://onebusaway.caseyjhand.com/mcp)
 
 </div>
@@ -25,189 +29,168 @@
 
 ## Overview
 
-Real-time transit data from OneBusAway — stops, routes, arrivals, vehicle positions, and schedules for Puget Sound (King County Metro, Sound Transit, Pierce Transit, Community Transit) and any other OneBusAway-compatible instance. Look up stops and routes, track live arrivals and vehicle positions, and pull full-day schedules and service alerts from any MCP client. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
+Real-time transit data and schedules from OneBusAway. It defaults to the Puget Sound instance (King County Metro, Sound Transit, Pierce Transit, Community Transit, and more) and works with any other OneBusAway instance. Find stops and routes, track live arrivals and vehicle positions, and pull full-day schedules, vehicle blocks, and service alerts. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
 
 ### Tools
 
 | Tool | Description |
 |:---|:---|
-| `onebusaway_list_agencies` | List all transit agencies on this OneBusAway instance with IDs, contact info, and geographic coverage |
-| `onebusaway_find_stops` | Find bus stops near a lat/lon within a configurable radius, optionally filtered by stop code |
-| `onebusaway_search_stops` | Search stops by name or code string to resolve a human-readable name to a stop ID |
-| `onebusaway_get_stop` | Fetch details for a specific stop by agency-prefixed ID |
-| `onebusaway_find_routes` | Find transit routes near a lat/lon, optionally filtered by name or number |
-| `onebusaway_search_routes` | Search routes by name or number to resolve a route short name to a route ID |
-| `onebusaway_get_route` | Fetch details for a specific route by agency-prefixed ID |
-| `onebusaway_list_routes_for_agency` | List all routes operated by an agency |
-| `onebusaway_get_arrivals` | Real-time arrivals and departures at a stop — GPS-tracked predictions, schedule deviation, vehicle positions, and active alerts |
-| `onebusaway_get_trip` | Real-time status and full stop sequence for an active trip |
-| `onebusaway_get_vehicles` | Real-time positions of all active vehicles for an agency, optionally filtered to one route |
-| `onebusaway_get_schedule_for_stop` | Full-day departure schedule for a stop by route and direction |
-| `onebusaway_get_schedule_for_route` | Full-day schedule for a route — all trips and stop sequences |
-| `onebusaway_get_alert` | Fetch full service alert detail by situation ID — summary, description, reason, affected stops/routes, consequence, and active time windows |
-| `onebusaway_get_block` | Fetch the full-day block schedule for a vehicle by block ID — all trips in order with stop times, useful for fleet tracking |
+| `onebusaway_list_agencies` | List the transit agencies on the instance, with IDs, contact info, and coverage area |
+| `onebusaway_find_stops` | Find stops near a lat/lon, optionally filtered by stop code |
+| `onebusaway_search_stops` | Resolve a stop name or code to a stop ID |
+| `onebusaway_get_stop` | Fetch one stop by ID |
+| `onebusaway_find_routes` | Find routes near a lat/lon, optionally filtered by name or number |
+| `onebusaway_search_routes` | Resolve a route name or number to a route ID |
+| `onebusaway_get_route` | Fetch one route by ID |
+| `onebusaway_list_routes_for_agency` | List every route an agency operates |
+| `onebusaway_get_arrivals` | Real-time arrivals and departures at a stop, with schedule deviation, vehicle positions, and active alerts |
+| `onebusaway_get_stop_context` | Stop details, real-time arrivals, and full detail for every alert at the stop, from one upstream request |
+| `onebusaway_get_alert` | Full service alert detail by situation ID |
+| `onebusaway_get_trip` | Real-time status and stop sequence for a trip |
+| `onebusaway_get_block` | Every trip one vehicle runs in a service day, in order, with stop times |
+| `onebusaway_get_vehicles` | Real-time positions of an agency's active vehicles, optionally for one route |
+| `onebusaway_get_schedule_for_stop` | Full-day departure schedule for a stop, by route and direction |
+| `onebusaway_get_schedule_for_route` | Full-day schedule for a route: every trip and its stop sequence |
 
 ### Resources
 
 | Resource | Description |
 |:---|:---|
-| `onebusaway://stop/{stopId}` | Stop metadata — name, coordinates, served routes, and wheelchair accessibility |
-| `onebusaway://route/{routeId}` | Route metadata — short name, description, agency, and schedule URL |
+| `onebusaway://stop/{stopId}` | Stop metadata: name, coordinates, served routes, wheelchair accessibility |
+| `onebusaway://route/{routeId}` | Route metadata: short name, description, agency, schedule URL |
 
-All resource data is also reachable via `onebusaway_get_stop` and `onebusaway_get_route`. Stop and route IDs use agency-prefixed format: `{agencyId}_{localId}` (e.g. `1_75403`, `1_100259`).
+The same data is available to tool-only clients through `onebusaway_get_stop` and `onebusaway_get_route`.
 
 ## Capability reference
 
 ### `onebusaway_list_agencies` <sub>tool</sub>
 
-- No input parameters — lists every agency on the instance
-- Each agency returns ID, contact info, timezone, and geographic coverage center/span
-- `limitExceeded` flags an upstream-capped list; this endpoint has no pagination to retrieve the rest
-- Agency IDs feed `onebusaway_list_routes_for_agency` and `onebusaway_get_vehicles`
+- No input; returns every agency with `id`, contact info, `timezone`, and `coverageCenter` / `coverageSpan`
+- `limitExceeded` flags an upstream-capped list, with no pagination to fetch the rest
 
 ---
 
 ### `onebusaway_find_stops` <sub>tool</sub>
 
-- Configurable search radius (default 300m, max ~1600m before results degrade)
-- Optional stop code filter (the number printed on the sign, e.g. `75403`)
-- Returns stop ID, code, name, direction, served route IDs, and wheelchair boarding status
-- `limitExceeded` flag signals when more stops exist beyond the returned set
-- Stop IDs returned here feed directly into `onebusaway_get_arrivals`
+- `lat` / `lon` required; `radius` in meters, default 300, max 1600; optional `query` matches the stop code printed on the sign
+- Each stop carries `id`, `code`, `direction`, `routeIds`, and `wheelchairBoarding` (`ACCESSIBLE` / `NOT_ACCESSIBLE` / `UNKNOWN`); `limitExceeded` means more stops exist within the radius
 
 ---
 
 ### `onebusaway_search_stops` <sub>tool</sub>
 
-- Free-text query — stop name fragment or stop code; `maxCount` up to 100 (default 10)
-- Returns ID, code, name, coordinates, served routes, wheelchair boarding
-- `limitExceeded` signals more matches exist than `maxCount` returned
-- Stop IDs feed `onebusaway_get_arrivals`
+- `query` (stop name fragment or stop code) required; `maxCount` up to 100, default 10
+- Same stop shape as `onebusaway_find_stops`; `limitExceeded` means more stops matched than `maxCount`
 
 ---
 
 ### `onebusaway_get_stop` <sub>tool</sub>
 
-- Single `stopId` lookup, agency-prefixed format `{agencyId}_{localId}` (e.g. `1_75403`)
-- Returns name, coordinates, direction, served route IDs, and wheelchair boarding status
-- Typed `stop_not_found` error recovers via `onebusaway_find_stops` or `onebusaway_search_stops`
+- Single `stopId`; returns `name`, `code`, coordinates, `direction`, `routeIds`, and `wheelchairBoarding`
+- Unknown IDs fail as `stop_not_found`, with recovery via `onebusaway_find_stops` or `onebusaway_search_stops`
 
 ---
 
 ### `onebusaway_find_routes` <sub>tool</sub>
 
-- Search radius (default 500m, max 1600m) or bounding box via `latSpan` + `lonSpan` (overrides radius when both are set)
-- Optional `query` filter by route name or number (e.g. "44")
-- Returns short name, long name, agency, GTFS `type` (0=tram … 5=cable_car), brand color, and schedule URL
-- `limitExceeded` flag signals more routes exist; narrow the radius or box to see all
-- Route IDs feed `onebusaway_get_schedule_for_route` and `onebusaway_get_vehicles`
+- `lat` / `lon` required; `radius` in meters, default 500, max 1600, or a `latSpan` + `lonSpan` box (both set) in its place; optional `query` by route name or number
+- Each route carries `shortName`, `longName`, `agencyId`, GTFS `type` (0=tram … 5=cable_car), `color`, and schedule `url`; `limitExceeded` means more routes exist in the area
 
 ---
 
 ### `onebusaway_search_routes` <sub>tool</sub>
 
-- Free-text query by route name or number; `maxCount` up to 100 (default 10)
-- `limitExceeded` signals more matches than `maxCount` returned
-- Typed `endpoint_unavailable` error when the instance's search/route endpoint 404s (e.g. Puget Sound) — recovery hints `onebusaway_find_routes` or `onebusaway_list_routes_for_agency` as fallbacks
+- `query` (route name or number) required; `maxCount` up to 100, default 10
+- Returns `shortName`, `longName`, `agencyId`, and GTFS `type`; `limitExceeded` means more routes matched than `maxCount`
+- Fails as `endpoint_unavailable` on instances whose route-search endpoint returns 404, Puget Sound among them; use `onebusaway_find_routes` or `onebusaway_list_routes_for_agency` instead
 
 ---
 
 ### `onebusaway_get_route` <sub>tool</sub>
 
-- Single `routeId` lookup, agency-prefixed format (e.g. `1_100259`)
-- Returns short/long name, agency, GTFS route `type`, brand color, and schedule URL
-- Typed `route_not_found` error recovers via `onebusaway_find_routes` or `onebusaway_search_routes`
+- Single `routeId`; returns `shortName`, `longName`, `description`, agency, GTFS `type`, `color`, and schedule `url`
+- Unknown IDs fail as `route_not_found`, with recovery via `onebusaway_find_routes` or `onebusaway_search_routes`
 
 ---
 
 ### `onebusaway_list_routes_for_agency` <sub>tool</sub>
 
-- Lists every route operated by one `agencyId` (from `onebusaway_list_agencies`)
-- Returns short/long name, GTFS `type`, brand color, and schedule URL per route
-- `limitExceeded` flags an upstream-capped list; no pagination to retrieve the rest
-- Typed `agency_not_found` error recovers via `onebusaway_list_agencies`
+- `agencyId` required; unknown agencies fail as `agency_not_found`
+- Every route with `shortName`, `longName`, GTFS `type`, `color`, and `url`; `limitExceeded` flags an upstream-capped list with no pagination
 
 ---
 
 ### `onebusaway_get_arrivals` <sub>tool</sub>
 
-- Configurable time window (`minutesBefore`, `minutesAfter` — defaults 5/35)
-- `predicted` boolean distinguishes GPS-tracked estimates from schedule-only projections; schedule deviation is only meaningful when true
-- Schedule deviation in seconds (positive = late, negative = early), vehicle position, and stops-away count when available
-- Active service alerts included inline via `situationIds` and `situations[]`
-- Typed `rate_limited` error, retryable with `data.retryAfter` — one API key is shared across all callers, so requests queue against a global budget and are only shed when no slot opens within the wait cap
-- `tripId` feeds `onebusaway_get_trip`; typed `stop_not_found` recovers via `onebusaway_find_stops`/`onebusaway_search_stops`
+- `stopId` required; the window is `minutesBefore` (integer 0–60, default 5) / `minutesAfter` (integer 0–240, default 35), with longer horizons left to `onebusaway_get_schedule_for_stop`; unknown stops fail as `stop_not_found`
+- Each arrival carries `predicted` (false = schedule-only), `scheduleDeviation` in seconds (positive = late, meaningful only when predicted), `predictedArrivalTime`, `vehiclePosition`, `stopsAway`, and `tripId`
+- Active alerts arrive in `situations[]`: those on the stop itself plus those linked from each arrival's `situationIds`, each once
 
 ---
 
-### `onebusaway_get_trip` <sub>tool</sub>
+### `onebusaway_get_stop_context` <sub>tool</sub>
 
-- `tripId` from an arrivals response; optional `serviceDateMs` for a prior service day (defaults to today)
-- `includeSchedule` (default true) toggles the full stop sequence with GTFS arrival/departure times and distance-along-trip
-- Journey `phase` (e.g. `in_progress`, `layover_before`, `layover_during`), vehicle position, and schedule deviation
-- `blockId` feeds `onebusaway_get_block` for the vehicle's full-day schedule; null when the trip has no block
-- Typed `trip_not_found` error recovers via `onebusaway_get_schedule_for_route` when the trip has completed
-
----
-
-### `onebusaway_get_vehicles` <sub>tool</sub>
-
-- Optional `routeId` filter applied client-side — all agency vehicles are fetched first
-- Returns GPS position, heading, schedule deviation, current trip, and journey phase per vehicle
-- `predicted` flag distinguishes actively-reporting vehicles from stale entries
-- `limitExceeded` flags an upstream-capped list; no pagination to retrieve the rest
-- Typed `agency_not_found` error recovers via `onebusaway_list_agencies`
-
----
-
-### `onebusaway_get_schedule_for_stop` <sub>tool</sub>
-
-- `date` (ISO 8601) defaults to today in the agency's timezone
-- Departures grouped by route and direction, each with a `tripId` for follow-up `onebusaway_get_trip` calls
-- Static schedule only — no real-time data; use `onebusaway_get_arrivals` for live predictions
-- Typed `stop_not_found` error recovers via `onebusaway_find_stops`/`onebusaway_search_stops`
-
----
-
-### `onebusaway_get_schedule_for_route` <sub>tool</sub>
-
-- `date` (ISO 8601) defaults to today
-- Returns every trip for the route with full stop sequences and GTFS arrival/departure times
-- Static schedule only — no real-time data; use `onebusaway_get_arrivals` at specific stops for live predictions
-- Typed `route_not_found` error recovers via `onebusaway_find_routes`/`onebusaway_search_routes`
+- Same input as `onebusaway_get_arrivals`, and the same `stop_not_found` / `rate_limited` failures; one call issues one upstream request
+- Returns `stop` (the `onebusaway_get_stop` fields minus `routeIds`), `arrivals` in the `onebusaway_get_arrivals` shape, and `alerts` in the `onebusaway_get_alert` shape — every alert on the stop or on an arrival in the window, including stop-wide alerts no arrival in the window carries
+- When the upstream response omits the stop, `stop` is null; a referenced alert missing from the response is left out; either way a `notice` names the tool to fetch it with
 
 ---
 
 ### `onebusaway_get_alert` <sub>tool</sub>
 
-- Single `situationId` lookup — IDs come from `onebusaway_get_arrivals` (`situations[].id` or `arrivals[].situationIds`)
-- `reason` uses TPEG codes (`equipmentReason`, `environmentReason`, `personnelReason`, `miscellaneousReason`, `securityAlert`)
-- `affects` scopes the alert to agency/route/stop/trip; `consequences` carries condition and diversion stop IDs
-- `activeWindows` gives open-ended or bounded active time ranges
-- Typed `situation_not_found` error
+- Single `situationId`, from `onebusaway_get_arrivals` (`situations[].id` or `arrivals[].situationIds`); unknown IDs fail as `situation_not_found`
+- Returns a TPEG `reason` code, `severity`, `consequenceMessage`, `affects` (agency, route, stop, or trip scope), `consequences` with diversion stop IDs, and `activeWindows`
+
+---
+
+### `onebusaway_get_trip` <sub>tool</sub>
+
+- `tripId` required; `serviceDateMs` (non-negative integer, midnight local) only for a trip on a previous service day; `includeSchedule` (default true) adds the stop sequence with GTFS times and `distanceAlongTripMeters`
+- `status` carries `phase` (e.g. `in_progress`, `layover_before`), `predicted`, `position`, `scheduleDeviation`, and `nextStop`; `blockId` (null when the trip has none) feeds `onebusaway_get_block`
+- Fails as `trip_not_found` when the trip isn't active for the service date; a completed trip's times come from `onebusaway_get_schedule_for_route`
 
 ---
 
 ### `onebusaway_get_block` <sub>tool</sub>
 
-- Single `blockId` lookup — obtain one via `onebusaway_get_arrivals` → `onebusaway_get_trip`
-- Returns every trip the vehicle runs that service day, in order, with full stop times
-- `activeServiceIds` / `inactiveServiceIds` show which service calendars apply today
-- Each trip carries `distanceAlongBlock` and `accumulatedSlackTime` (layover) for fleet-tracking math
-- Typed `block_not_found` error
+- Single `blockId`, from `onebusaway_get_trip`; unknown IDs fail as `block_not_found`
+- The vehicle's trips for the service day in order, each with `distanceAlongBlock`, `accumulatedSlackTime` (layover seconds), and `blockStopTimes`; `activeServiceIds` / `inactiveServiceIds` show which service calendars apply
+
+---
+
+### `onebusaway_get_vehicles` <sub>tool</sub>
+
+- `agencyId` required, unknown agencies fail as `agency_not_found`; optional `routeId` is filtered client-side after all of the agency's vehicles are fetched
+- Each vehicle carries `position`, `orientation`, `phase`, `scheduleDeviation`, `tripId`, `nextStop`, and `predicted` (reporting real-time GPS); `limitExceeded` flags an upstream-capped list with no pagination
+
+---
+
+### `onebusaway_get_schedule_for_stop` <sub>tool</sub>
+
+- `stopId` required; optional `date` as a real `YYYY-MM-DD` calendar date, default (omitted or blank) today in the agency's timezone; unknown stops fail as `stop_not_found`
+- Departures grouped by route and direction, each with `scheduledDepartureTime` and `tripId`
+- Static schedule only; live predictions come from `onebusaway_get_arrivals`
+
+---
+
+### `onebusaway_get_schedule_for_route` <sub>tool</sub>
+
+- `routeId` required; optional `date` as a real `YYYY-MM-DD` calendar date, default (omitted or blank) today; unknown routes fail as `route_not_found`
+- Every trip that day with `tripId`, `tripHeadsign`, `serviceId`, and its stop sequence
+- Static schedule only; live predictions come from `onebusaway_get_arrivals` at a stop
 
 ---
 
 ### `onebusaway://stop/{stopId}` <sub>resource</sub>
 
-- Stop record as `application/json` — name, coordinates, served routes, wheelchair accessibility
+- Stop record as `application/json`, the same shape `onebusaway_get_stop` returns
 - `stopId` comes from `onebusaway_find_stops` or `onebusaway_search_stops`
 
 ---
 
 ### `onebusaway://route/{routeId}` <sub>resource</sub>
 
-- Route record as `application/json` — short name, description, agency, schedule URL
+- Route record as `application/json`, the same shape `onebusaway_get_route` returns
 - `routeId` comes from `onebusaway_find_routes` or `onebusaway_search_routes`
 
 ## Features
@@ -216,18 +199,18 @@ Built on [`@cyanheads/mcp-ts-core`](https://github.com/cyanheads/mcp-ts-core): s
 
 OneBusAway-specific:
 
-- Wraps [`onebusaway-sdk`](https://www.npmjs.com/package/onebusaway-sdk) with typed error classification (`NotFound`, `RateLimited`, `ServiceUnavailable`)
-- Defaults to the Puget Sound instance (`api.pugetsound.onebusaway.org`) — works with `ONEBUSAWAY_API_KEY=TEST` for development
-- Configurable `ONEBUSAWAY_BASE_URL` for any OneBusAway-compatible instance (NYC, Washington DC, Tampa, etc.)
-- Every upstream request runs through one FIFO pacer sized to the key's budget, so a fan-out burst queues for its slot instead of failing once the budget is spent
-- Server-level instructions guide agents through stop ID format, recommended workflows, and OneBusAway's limitations (no trip planning)
+- Wraps [`onebusaway-sdk`](https://www.npmjs.com/package/onebusaway-sdk) with typed error classification (`NotFound`, `RateLimited`, `ValidationError` for an upstream 400, `ServiceUnavailable`)
+- Defaults to the Puget Sound instance (`api.pugetsound.onebusaway.org`), where `ONEBUSAWAY_API_KEY=TEST` works for development; `ONEBUSAWAY_BASE_URL` points it at any other OneBusAway instance
+- Stop and route IDs are agency-prefixed, `{agencyId}_{localId}` (stop `1_75403`, route `1_100259`); agency IDs are the bare prefix (`1` for Metro Transit, `40` for Sound Transit)
+- One shared pacer, sized by `ONEBUSAWAY_RATE_LIMIT_*`, queues every upstream request against the API key's budget; a call that gets no slot within the wait cap fails as retryable `rate_limited` with `data.retryAfter`, on any tool
+- Transit data only, no trip planning; server-level instructions walk agents through the ID format and the common lookup chains
 
 Agent-friendly output:
 
-- `predicted` boolean on every arrival and vehicle distinguishes GPS-tracked data from schedule-only projections — agents branch on data, not string parsing
-- Schedule deviation in seconds on arrivals, trips, and vehicle positions — structured for countdown timer math
-- Cross-tool linkage: `tripId` from arrivals feeds `onebusaway_get_trip`; `stopId` from searches feeds arrivals; `agencyId` from list feeds vehicles and route listing
-- Structured error contracts with recovery hints (`onebusaway_search_routes` 404 → fallback to `onebusaway_find_routes` or `onebusaway_list_routes_for_agency`)
+- `predicted` on every arrival, trip, and vehicle separates GPS-tracked data from schedule-only projections
+- Machine-readable times: `scheduleDeviation` in seconds; arrival, stop-schedule, and update timestamps in Unix milliseconds; trip, route-schedule, and block stop times in GTFS seconds from midnight
+- Chainable IDs: `stopId` from the stop tools feeds arrivals, `tripId` feeds `onebusaway_get_trip`, `blockId` feeds `onebusaway_get_block`, `situationIds` feed `onebusaway_get_alert`, and `agencyId` feeds vehicles and route listing
+- Typed error contracts whose recovery hints name the next tool to call, plus a `notice` on empty or truncated results
 
 ## Getting started
 
@@ -315,7 +298,7 @@ MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 ONEBUSAWAY_API_KEY=TEST bun run start
 ### Prerequisites
 
 - [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
-- An OneBusAway API key. `TEST` works on the Puget Sound instance for development. For production use or other instances, register at the relevant agency's developer portal.
+- A OneBusAway API key. `TEST` works on the Puget Sound instance for development; for production use or other instances, register at the relevant agency's developer portal.
 
 ### Installation
 
@@ -346,24 +329,21 @@ cp .env.example .env
 
 ## Configuration
 
-All configuration is validated at startup via Zod schemas. Key environment variables:
-
 | Variable | Description | Default |
 |:---|:---|:---|
-| `ONEBUSAWAY_API_KEY` | OneBusAway API key. `TEST` works on Puget Sound for development. | `TEST` |
-| `ONEBUSAWAY_BASE_URL` | Base URL for the OneBusAway instance. | `https://api.pugetsound.onebusaway.org` |
-| `ONEBUSAWAY_RATE_LIMIT_REQUESTS` | Upstream requests the pacer allows per window. | `20` |
-| `ONEBUSAWAY_RATE_LIMIT_WINDOW_MS` | Width of the pacer's sliding rate window, in milliseconds. | `60000` |
-| `ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS` | Longest a call may wait in the pacer queue, in milliseconds. Keep it under the SDK client's 60 s request timeout. | `45000` |
+| `ONEBUSAWAY_API_KEY` | OneBusAway API key. `TEST` works on the Puget Sound instance. | `TEST` |
+| `ONEBUSAWAY_BASE_URL` | Base URL of the OneBusAway instance. | `https://api.pugetsound.onebusaway.org` |
+| `ONEBUSAWAY_RATE_LIMIT_REQUESTS` | Upstream requests allowed per window, shared by all callers. | `20` |
+| `ONEBUSAWAY_RATE_LIMIT_WINDOW_MS` | Width of the sliding rate window, in ms. | `60000` |
+| `ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS` | Longest a call waits for a slot before failing as `rate_limited`, in ms. Keep it under the SDK's 60 s request timeout. | `45000` |
 | `MCP_TRANSPORT_TYPE` | Transport: `stdio` or `http`. | `stdio` |
 | `MCP_HTTP_PORT` | HTTP server port. | `3010` |
-| `MCP_HTTP_ENDPOINT_PATH` | HTTP endpoint path. | `/mcp` |
-| `MCP_SESSION_MODE` | Session handling: `auto`, `stateful`, or `stateless`. | `stateless` |
-| `MCP_AUTH_MODE` | Auth mode: `none`, `jwt`, or `oauth`. | `none` |
+| `MCP_SESSION_MODE` | HTTP session mode: `stateless`, `stateful`, or `auto`. | `stateless` |
+| `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `notice`, `warning`, `error`). | `info` |
 | `LOGS_DIR` | Directory for log files (Node.js only). | `<project-root>/logs` |
 | `STORAGE_PROVIDER_TYPE` | Storage backend: `in-memory`, `filesystem`, `supabase`, `cloudflare-kv/r2/d1`. | `in-memory` |
-| `OTEL_ENABLED` | Enable OpenTelemetry instrumentation. | `false` |
+| `OTEL_ENABLED` | Enable [OpenTelemetry](https://github.com/cyanheads/mcp-ts-core/tree/main/docs/telemetry). | `false` |
 
 See [`.env.example`](./.env.example) for the full list of optional overrides.
 
@@ -386,9 +366,10 @@ See [`.env.example`](./.env.example) for the full list of optional overrides.
 - **Run checks and tests:**
 
   ```sh
-  bun run devcheck   # Lint, format, typecheck, security, changelog sync
-  bun run test       # Vitest test suite
-  bun run lint:mcp   # Validate MCP definitions against spec
+  bun run devcheck       # Lint, format, typecheck, security, changelog sync
+  bun run test           # Vitest test suite
+  bun run test:coverage  # Test suite with coverage, held to the framework thresholds
+  bun run lint:mcp       # Validate MCP definitions against spec
   ```
 
 ### Docker
@@ -404,12 +385,12 @@ The Dockerfile defaults to HTTP transport, stateless session mode, and logs to `
 
 | Directory | Purpose |
 |:---|:---|
-| `src/index.ts` | `createApp()` entry point — registers tools/resources and inits the OneBusAway service. |
-| `src/config/server-config.ts` | Server-specific env var parsing: `ONEBUSAWAY_API_KEY`, `ONEBUSAWAY_BASE_URL`, and the `ONEBUSAWAY_RATE_LIMIT_*` pacing budget. |
-| `src/mcp-server/tools` | Tool definitions (`*.tool.ts`). 15 tools across discovery, real-time, and schedule operations. |
-| `src/mcp-server/resources` | Resource definitions (`*.resource.ts`). Stop and route metadata resources. |
-| `src/services/onebusaway` | OneBusAway service — wraps `onebusaway-sdk`, typed error classification, domain types. |
-| `tests/` | Unit and integration tests mirroring `src/`. 350 tests covering all tools, resources, the service, and config. |
+| `src/index.ts` | `createApp()` entry point: registers tools and resources, sets server instructions, inits the OneBusAway service. |
+| `src/config` | Server-specific env var parsing and validation with Zod. |
+| `src/mcp-server/tools` | Tool definitions (`*.tool.ts`) plus the schemas and format helpers they share. |
+| `src/mcp-server/resources` | Stop and route resource definitions (`*.resource.ts`). |
+| `src/services/onebusaway` | OneBusAway service: wraps `onebusaway-sdk`, paces upstream requests, classifies errors; domain types. |
+| `tests/` | Vitest tests for the tools, resources, service, and config. |
 
 ## Development guide
 
@@ -419,17 +400,6 @@ See [`CLAUDE.md`](./CLAUDE.md) for development guidelines and architectural rule
 - Use `ctx.log` for request-scoped logging, `ctx.state` for tenant-scoped storage
 - Register new tools and resources in the `createApp()` arrays in `src/index.ts`
 - Wrap external API calls: validate raw → normalize to domain type → return output schema; never fabricate missing fields
-
-## Data
-
-Transit data is sourced from the [Puget Sound OneBusAway API](https://api.pugetsound.onebusaway.org), operated by Sound Transit and King County Metro. Use of this data is governed by the [Sound Transit Transit Data Terms of Use](https://www.soundtransit.org/help-contacts/business-information/open-transit-data-otd/transit-data-terms-use).
-
-Downstream users of this server's hosted endpoint receive data subject to those terms. Key obligations include:
-
-- **Clause 2** — Usage metrics are available on request.
-- **Clause 3** — Data is fetched live from the OneBusAway API and is not modified or cached beyond the request cycle.
-- **Clause 4** — You agree to pass through substantially similar terms to any users you provide this data to.
-- **Clause 7** — This server does not use Sound Transit trademarks in its name or branding.
 
 ## Contributing
 
@@ -443,3 +413,10 @@ bun run test
 ## License
 
 Apache-2.0 — see [LICENSE](LICENSE) for details.
+
+Transit data from the default [Puget Sound OneBusAway API](https://api.pugetsound.onebusaway.org), operated by Sound Transit and King County Metro, is governed by the [Sound Transit Transit Data Terms of Use](https://www.soundtransit.org/help-contacts/business-information/open-transit-data-otd/transit-data-terms-use), and users of the hosted endpoint receive it under those terms. Key obligations:
+
+- **Clause 2**: usage metrics are available on request.
+- **Clause 3**: data is fetched live from the OneBusAway API and is not modified or cached beyond the request cycle.
+- **Clause 4**: you agree to pass substantially similar terms through to any users you provide this data to.
+- **Clause 7**: this server does not use Sound Transit trademarks in its name or branding.
