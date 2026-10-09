@@ -1,6 +1,6 @@
 # onebusaway-mcp-server - Directory Structure
 
-Generated on: 2026-09-25 04:43:34
+Generated on: 2026-10-09 06:56:21
 
 ```text
 onebusaway-mcp-server/
@@ -128,9 +128,11 @@ onebusaway-mcp-server/
 │   ├── clean-mcpb.ts
 │   ├── clean.ts
 │   ├── devcheck.ts
+│   ├── install-otel.ts
 │   ├── lint-mcp.ts
 │   ├── lint-packaging.ts
 │   ├── list-skills.ts
+│   ├── prune-musl-packages.ts
 │   ├── release-github.ts
 │   ├── split-changelog.ts
 │   └── tree.ts

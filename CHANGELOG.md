@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.2.1](changelog/0.2.x/0.2.1.md) — 2026-10-08
+
+Moves to mcp-ts-core 0.13.14: tool arguments sent as numeric or boolean strings, as integers for string fields, or as null optionals are repaired before validation, tool error results carry their request ID, and the Docker image installs production dependencies in a build-platform stage on Bun 1.4.2.
+
 ## [0.2.0](changelog/0.2.x/0.2.0.md) — 2026-09-24 · ⚠️ Breaking
 
 New onebusaway_get_stop_context returns a stop's details, arrivals, and full alert detail from one upstream request; get_arrivals now lists stop-level alerts, arrival windows, trip service dates, and schedule dates are validated at the schema, and an upstream 400 is a non-retryable validation error.
