@@ -57,15 +57,9 @@ await createApp({
   ],
   resources: [stopResource, routeResource],
   prompts: [],
+  skills: 'skills',
   instructions:
-    'OneBusAway MCP server — real-time transit data for Puget Sound (King County Metro, Sound Transit, Pierce Transit, Community Transit, and more) and other OneBusAway instances.\n' +
-    '- Stop IDs use agency-prefixed format: {agencyId}_{localId} (e.g. "1_75403" for Metro Transit stop 75403)\n' +
-    '- To get arrivals: use onebusaway_find_stops or onebusaway_search_stops to resolve a location/name to a stopId, then call onebusaway_get_arrivals\n' +
-    '- For "where is the 44?": use onebusaway_search_routes to get routeId, then onebusaway_get_vehicles\n' +
-    '- For "what\'s happening at this stop?": call onebusaway_get_stop_context — stop details, arrivals, and full detail for every alert on the stop, from one upstream request\n' +
-    '- For one service alert by ID: get a situationId from onebusaway_get_arrivals (situations[].id), then call onebusaway_get_alert\n' +
-    "- For a vehicle's full day schedule: get a tripId from onebusaway_get_arrivals, call onebusaway_get_trip to find the blockId, then call onebusaway_get_block\n" +
-    '- OneBusAway does not include trip planning — direct users to Google Maps or Transit app for routing',
+    'OneBusAway provides stops, routes, arrivals, vehicles, alerts, and timetables for the configured instance (Puget Sound by default), without origin-to-destination trip planning. Stop and route IDs are agency-prefixed and instance-specific: resolve them through discovery before arrivals, schedule, or vehicle calls; do not construct IDs from displayed codes or route numbers. Use stop context for arrivals plus available alert detail, and follow notices for unresolved references. Carry arrival trip IDs into trip lookup and a non-null block ID into block lookup. Name search availability varies by instance; use geographic discovery or agency route listings when it fails. Requests share an upstream API-key budget; honor rate-limit retry guidance. See onebusaway-guide for selection and interpretation gates.',
   setup() {
     initOneBusAwayService(getServerConfig());
   },
