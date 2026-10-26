@@ -7,7 +7,12 @@
  */
 
 import { z } from '@cyanheads/mcp-ts-core';
-import { coordsOrNone, listOrNone, orNone } from '@/mcp-server/tools/format-helpers.js';
+import {
+  coordsOrNone,
+  formatEpoch,
+  listOrNone,
+  orNone,
+} from '@/mcp-server/tools/format-helpers.js';
 
 /** Upper bound of `minutesAfter` — the widest real-time window one call can request. */
 const MINUTES_AFTER_MAX = 240;
@@ -96,11 +101,8 @@ export const arrivalSchema = z
 type Arrival = z.infer<typeof arrivalSchema>;
 
 /** Format Unix milliseconds as a human-readable HH:MM time string. */
-export function fmtTime(ms: number): string {
-  const d = new Date(ms);
-  const h = d.getHours().toString().padStart(2, '0');
-  const m = d.getMinutes().toString().padStart(2, '0');
-  return `${h}:${m}`;
+export function fmtTime(ms: number, timezone: string): string {
+  return formatEpoch(ms, timezone);
 }
 
 /** Format schedule deviation (seconds) as a readable label. */
@@ -112,16 +114,18 @@ function fmtDeviation(seconds: number): string {
 }
 
 /** Markdown lines for one arrival, opening with its `### Route …` heading. */
-export function renderArrival(a: Arrival): string[] {
+export function renderArrival(a: Arrival, timezone: string): string[] {
   const arrivalTime = a.predictedArrivalTime ?? a.scheduledArrivalTime;
   const devStr = a.predicted ? ` (${fmtDeviation(a.scheduleDeviation)})` : ' (scheduled)';
   const lines = [
     `\n### Route ${a.routeShortName} → ${a.tripHeadsign}`,
-    `**Arrives:** ${fmtTime(arrivalTime)}${devStr}`,
-    `**Scheduled:** ${fmtTime(a.scheduledArrivalTime)} (${a.scheduledArrivalTime})`,
+    `**Arrives:** ${fmtTime(arrivalTime, timezone)}${devStr}`,
+    `**Scheduled:** ${fmtTime(a.scheduledArrivalTime, timezone)} (${a.scheduledArrivalTime})`,
   ];
   if (a.predictedArrivalTime != null) {
-    lines.push(`**Predicted:** ${fmtTime(a.predictedArrivalTime)} (${a.predictedArrivalTime})`);
+    lines.push(
+      `**Predicted:** ${fmtTime(a.predictedArrivalTime, timezone)} (${a.predictedArrivalTime})`,
+    );
   }
   lines.push(`**Trip ID:** ${a.tripId} | **Route ID:** ${a.routeId}`);
   if (a.stopsAway != null && a.stopsAway >= 0) {

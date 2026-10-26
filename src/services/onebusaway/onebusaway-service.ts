@@ -20,6 +20,7 @@ import type {
   Agency,
   ArrivalEntry,
   ArrivalsResult,
+  BlockConfiguration,
   BlockResult,
   Route,
   RouteScheduleResult,
@@ -31,8 +32,10 @@ import type {
   StopContextResult,
   StopScheduleResult,
   StopScheduleRoute,
+  StopSelectors,
   StopSummary,
   TripResult,
+  TripSelectors,
   VehicleEntry,
 } from './types.js';
 
@@ -119,6 +122,34 @@ function firstNonEmpty(...values: Array<string | null | undefined>): string {
   return '';
 }
 
+/** Omit blank trip IDs and absent bounds, leaving selector-free calls unchanged. */
+function tripSelectors(params: TripSelectors): TripSelectors | undefined {
+  const selectors: TripSelectors = {
+    ...(params.tripId?.trim() && { tripId: params.tripId }),
+    ...(params.departureFromSec !== undefined && { departureFromSec: params.departureFromSec }),
+    ...(params.departureBeforeSec !== undefined && {
+      departureBeforeSec: params.departureBeforeSec,
+    }),
+  };
+  return Object.keys(selectors).length > 0 ? selectors : undefined;
+}
+
+/** Match whole trips by exact identity or any departure in the half-open interval. */
+function matchesTrip(
+  tripId: string,
+  stops: Array<{ departureTime: number }>,
+  selectors: TripSelectors,
+): boolean {
+  if (selectors.tripId !== undefined) return tripId === selectors.tripId;
+  return stops.some(
+    (stop) =>
+      (selectors.departureFromSec === undefined ||
+        stop.departureTime >= selectors.departureFromSec) &&
+      (selectors.departureBeforeSec === undefined ||
+        stop.departureTime < selectors.departureBeforeSec),
+  );
+}
+
 /**
  * Discovery guidance surfaced on not-found errors as `data.recovery.hint`, keyed
  * by contract reason. The not-found error is the moment a caller is provably
@@ -184,9 +215,60 @@ type RawSituation = {
   url?: { value?: string };
 };
 
-/** Maps a raw situation to the full alert shape, dropping the empty-string fields OBA pads affects with. */
-function toSituationDetail(entry: RawSituation): SituationDetail {
+/** Agency and entity relationships available in a response's reference tables. */
+type TimezoneReferences = {
+  agencies?: Array<{ id: string; timezone?: string }>;
+  routes?: Array<{ id: string; agencyId?: string }>;
+  trips?: Array<{ id: string; routeId?: string }>;
+};
+
+/** Stop identifiers carry their agency namespace before the first underscore. */
+function stopAgencyId(stopId: string): string | undefined {
+  return stopId.includes('_') ? stopId.split('_')[0] : undefined;
+}
+
+/** Missing or invalid agency zones stay explicitly UTC. */
+function agencyTimezone(
+  refs: TimezoneReferences | undefined,
+  agencyId: string | undefined,
+): string {
+  const zone = refs?.agencies?.find((agency) => agency.id === agencyId)?.timezone;
+  if (!zone || zone.startsWith('+') || zone.startsWith('-')) return 'UTC';
+  try {
+    new Intl.DateTimeFormat('en-US', { timeZone: zone });
+    return zone;
+  } catch {
+    return 'UTC';
+  }
+}
+
+/** A scoped alert uses a local zone only when every affected entity resolves and agrees. */
+function situationTimezone(entry: RawSituation, refs: TimezoneReferences | undefined): string {
+  const agencies = new Map(refs?.agencies?.map((agency) => [agency.id, agency]));
+  const routes = new Map(refs?.routes?.map((route) => [route.id, route]));
+  const trips = new Map(refs?.trips?.map((trip) => [trip.id, trip]));
+  const zones: string[] = [];
+  for (const affect of entry.allAffects ?? []) {
+    const ids: Array<string | undefined> = [];
+    if (affect.agencyId) ids.push(affect.agencyId);
+    if (affect.routeId) ids.push(routes.get(affect.routeId)?.agencyId);
+    if (affect.tripId) ids.push(routes.get(trips.get(affect.tripId)?.routeId ?? '')?.agencyId);
+    if (affect.stopId) ids.push(stopAgencyId(affect.stopId));
+    if (ids.length === 0) return 'UTC';
+    for (const id of ids) {
+      const zone = id ? agencies.get(id)?.timezone : undefined;
+      if (!zone || agencyTimezone(refs, id) !== zone) return 'UTC';
+      zones.push(zone);
+    }
+  }
+  const first = zones[0];
+  return first !== undefined && zones.every((zone) => zone === first) ? first : 'UTC';
+}
+
+/** Maps full alert detail, dropping empty affected IDs and resolving its own timezone. */
+function toSituationDetail(entry: RawSituation, refs?: TimezoneReferences): SituationDetail {
   return {
+    timezone: situationTimezone(entry, refs),
     id: entry.id,
     summary: entry.summary?.value ?? '',
     description: entry.description?.value ?? null,
@@ -630,12 +712,14 @@ export class OneBusAwayService {
         id: s.id,
         summary: s.summary?.value ?? '',
         description: s.description?.value ?? null,
+        timezone: situationTimezone(s, data.references),
       }));
 
       return {
         stopId: params.stopId,
         stopName: stopRef?.name ?? params.stopId,
         currentTime,
+        timezone: agencyTimezone(data.references, stopAgencyId(params.stopId)),
         arrivals,
         situations,
       };
@@ -663,8 +747,9 @@ export class OneBusAwayService {
       return {
         stop,
         currentTime,
+        timezone: agencyTimezone(data.references, stopAgencyId(params.stopId)),
         arrivals,
-        alerts: situations.map(toSituationDetail),
+        alerts: situations.map((situation) => toSituationDetail(situation, data.references)),
         unresolvedSituationIds: unresolvedIds,
       };
     });
@@ -710,6 +795,7 @@ export class OneBusAwayService {
 
         return {
           tripId: params.tripId,
+          timezone: agencyTimezone(refs, routeRef?.agencyId),
           routeShortName: firstNonEmpty(
             tripRef?.routeShortName,
             routeRef?.shortName,
@@ -744,7 +830,13 @@ export class OneBusAwayService {
   getVehicles(
     params: { agencyId: string; routeId?: string },
     ctx: Context,
-  ): Promise<{ vehicles: VehicleEntry[]; limitExceeded: boolean }> {
+  ): Promise<{
+    vehicles: VehicleEntry[];
+    timezone: string;
+    limitExceeded: boolean;
+    omittedWithoutPosition: number;
+    omittedWithoutPositionOnRoute?: number;
+  }> {
     ctx.log.debug('getVehicles', { agencyId: params.agencyId });
     return this.paced(ctx, async () => {
       try {
@@ -758,20 +850,24 @@ export class OneBusAwayService {
         const tripMap = new Map(refs.trips.map((t) => [t.id, t]));
         const routeMap = new Map(refs.routes.map((r) => [r.id, r]));
 
+        let omittedWithoutPosition = 0;
+        let omittedWithoutPositionOnRoute = 0;
         let vehicles = resp.data.list.flatMap((v): VehicleEntry[] => {
+          const tripId = v.tripStatus?.activeTripId || v.tripId || null;
+          const tripRef = tripId ? tripMap.get(tripId) : undefined;
+          const routeId = tripRef?.routeId ?? null;
           const location = v.location;
-          if (location?.lat == null || location.lon == null) return [];
-
-          const tripRef = v.tripId ? tripMap.get(v.tripId) : undefined;
-          const routeId = v.tripStatus?.activeTripId
-            ? (tripMap.get(v.tripStatus.activeTripId)?.routeId ?? tripRef?.routeId ?? null)
-            : (tripRef?.routeId ?? null);
+          if (location?.lat == null || location.lon == null) {
+            omittedWithoutPosition++;
+            if (params.routeId && routeId === params.routeId) omittedWithoutPositionOnRoute++;
+            return [];
+          }
           const routeRef = routeId ? routeMap.get(routeId) : null;
 
           return [
             {
               vehicleId: v.vehicleId,
-              tripId: v.tripId || null,
+              tripId,
               routeId,
               routeShortName:
                 firstNonEmpty(routeRef?.shortName, routeRef?.nullSafeShortName) || null,
@@ -792,7 +888,13 @@ export class OneBusAwayService {
           vehicles = vehicles.filter((v) => v.routeId === params.routeId);
         }
 
-        return { vehicles, limitExceeded: resp.data.limitExceeded ?? false };
+        return {
+          vehicles,
+          timezone: agencyTimezone(refs, params.agencyId),
+          limitExceeded: resp.data.limitExceeded ?? false,
+          omittedWithoutPosition,
+          ...(params.routeId && { omittedWithoutPositionOnRoute }),
+        };
       } catch (err) {
         classifyError(err, 'agency', params.agencyId, 'agency_not_found');
       }
@@ -802,7 +904,7 @@ export class OneBusAwayService {
   // ----- Schedules -----
 
   getScheduleForStop(
-    params: { stopId: string; date?: string },
+    params: { stopId: string; date?: string } & StopSelectors,
     ctx: Context,
   ): Promise<StopScheduleResult> {
     ctx.log.debug('getScheduleForStop', { stopId: params.stopId });
@@ -840,11 +942,53 @@ export class OneBusAwayService {
           };
         });
 
+        const selectors: StopSelectors = {
+          ...(params.routeId?.trim() && { routeId: params.routeId }),
+          ...(params.departureFromMs !== undefined && { departureFromMs: params.departureFromMs }),
+          ...(params.departureBeforeMs !== undefined && {
+            departureBeforeMs: params.departureBeforeMs,
+          }),
+        };
+        const hasSelection = Object.keys(selectors).length > 0;
+        const countDepartures = (items: StopScheduleRoute[]) =>
+          items.reduce(
+            (sum, route) =>
+              sum + route.directions.reduce((n, direction) => n + direction.departures.length, 0),
+            0,
+          );
+        const selected = hasSelection
+          ? routes
+              .filter((route) => !selectors.routeId || route.routeId === selectors.routeId)
+              .map((route) => ({
+                ...route,
+                directions: route.directions
+                  .map((direction) => ({
+                    ...direction,
+                    departures: direction.departures.filter(
+                      (departure) =>
+                        (selectors.departureFromMs === undefined ||
+                          departure.scheduledDepartureTime >= selectors.departureFromMs) &&
+                        (selectors.departureBeforeMs === undefined ||
+                          departure.scheduledDepartureTime < selectors.departureBeforeMs),
+                    ),
+                  }))
+                  .filter((direction) => direction.departures.length > 0),
+              }))
+              .filter((route) => route.directions.length > 0)
+          : routes;
         return {
           stopId: params.stopId,
           stopName: stopRef?.name ?? params.stopId,
           serviceDateMs: entry.date,
-          routes,
+          timezone: agencyTimezone(refs, stopAgencyId(params.stopId)),
+          routes: selected,
+          ...(hasSelection && {
+            selection: {
+              ...selectors,
+              total: countDepartures(routes),
+              returned: countDepartures(selected),
+            },
+          }),
         };
       } catch (err) {
         classifyError(err, 'stop', params.stopId, 'stop_not_found');
@@ -853,7 +997,7 @@ export class OneBusAwayService {
   }
 
   getScheduleForRoute(
-    params: { routeId: string; date?: string },
+    params: { routeId: string; date?: string } & TripSelectors,
     ctx: Context,
   ): Promise<RouteScheduleResult> {
     ctx.log.debug('getScheduleForRoute', { routeId: params.routeId });
@@ -868,16 +1012,38 @@ export class OneBusAwayService {
             notFoundData(params.routeId, 'route_not_found'),
           );
         const entry = resp.data.entry as typeof resp.data.entry & ScheduleRouteEntryExtension;
+        const refs = (
+          resp.data as typeof resp.data & {
+            references?: {
+              agencies?: Array<{ id: string; timezone?: string }>;
+              routes?: Array<{
+                id: string;
+                agencyId?: string;
+                shortName?: string;
+                nullSafeShortName?: string;
+              }>;
+              stops?: Array<{ id: string; name?: string }>;
+              trips?: Array<{ id: string; tripHeadsign?: string; serviceId?: string }>;
+            };
+          }
+        ).references;
+        const routeRef = refs?.routes?.find((route) => route.id === entry.routeId);
+        const referenceStops = new Map((refs?.stops ?? []).map((stop) => [stop.id, stop]));
+        const referenceTrips = new Map((refs?.trips ?? []).map((trip) => [trip.id, trip]));
         const stopMap = new Map((entry.stops ?? []).map((s) => [s.id, s]));
         const groupings = entry.stopTripGroupings ?? [];
 
-        /** Resolve raw stop times to the domain shape, naming stops from the entry's stop refs. */
+        /** Resolve stop names reference-first, preserving legacy names when a reference is empty. */
         const toStops = (
           stopTimes: Array<{ stopId: string; arrivalTime: number; departureTime: number }>,
         ): RouteScheduleStopTime[] =>
           stopTimes.map((st) => ({
             stopId: st.stopId,
-            stopName: stopMap.get(st.stopId)?.name ?? st.stopId,
+            stopName: firstNonEmpty(
+              referenceStops.get(st.stopId)?.name,
+              stopMap.get(st.stopId)?.name,
+              st.stopId,
+            ),
             arrivalTime: st.arrivalTime,
             departureTime: st.departureTime,
           }));
@@ -888,42 +1054,73 @@ export class OneBusAwayService {
           // entry.trips carries per-trip metadata; the groupings carry each trip's stop times.
           const stopTimesByTrip = new Map<
             string,
-            Array<{ stopId: string; arrivalTime: number; departureTime: number }>
+            Array<{
+              stopId: string;
+              arrivalTime: number;
+              departureTime: number;
+              serviceId?: string;
+            }>
           >();
+          const groupingHeadsigns = new Map<string, string>();
           for (const grouping of groupings) {
             for (const twst of grouping.tripsWithStopTimes ?? []) {
               stopTimesByTrip.set(twst.tripId, twst.stopTimes);
+              groupingHeadsigns.set(twst.tripId, grouping.tripHeadsigns?.[0] ?? '');
             }
           }
           trips = entryTrips.map((t) => ({
             tripId: t.id,
-            tripHeadsign: t.tripHeadsign ?? '',
-            serviceId: t.serviceId,
+            tripHeadsign: firstNonEmpty(
+              referenceTrips.get(t.id)?.tripHeadsign,
+              t.tripHeadsign,
+              groupingHeadsigns.get(t.id),
+            ),
+            serviceId: firstNonEmpty(
+              referenceTrips.get(t.id)?.serviceId,
+              t.serviceId,
+              stopTimesByTrip.get(t.id)?.[0]?.serviceId,
+            ),
             stops: toStops(stopTimesByTrip.get(t.id) ?? []),
           }));
         } else {
-          // Puget Sound returns an empty entry.trips; the operating trips live in the groupings.
-          // tripsWithStopTimes carries no per-trip headsign/serviceId — derive the headsign from
-          // the grouping's direction headsign and the serviceId from the trip's own stop times.
+          /** Reference trips supply metadata; groupings alone enumerate scheduled service here. */
           trips = groupings.flatMap((grouping) => {
             const tripHeadsign = grouping.tripHeadsigns?.[0] ?? '';
             return (grouping.tripsWithStopTimes ?? []).map((twst) => ({
               tripId: twst.tripId,
-              tripHeadsign,
-              serviceId: twst.stopTimes[0]?.serviceId ?? '',
+              tripHeadsign: firstNonEmpty(
+                referenceTrips.get(twst.tripId)?.tripHeadsign,
+                tripHeadsign,
+              ),
+              serviceId: firstNonEmpty(
+                referenceTrips.get(twst.tripId)?.serviceId,
+                twst.stopTimes[0]?.serviceId,
+              ),
               stops: toStops(twst.stopTimes),
             }));
           });
         }
 
-        // Route short name is only carried on entry.trips; fall back to the route ID when empty.
-        const routeShortName = firstNonEmpty(entryTrips[0]?.routeShortName, entry.routeId);
+        const routeShortName = firstNonEmpty(
+          routeRef?.shortName,
+          routeRef?.nullSafeShortName,
+          entryTrips[0]?.routeShortName,
+          entry.routeId,
+        );
+        const selectors = tripSelectors(params);
+        const selected = selectors
+          ? trips.filter((trip) => matchesTrip(trip.tripId, trip.stops, selectors))
+          : trips;
 
         return {
           routeId: entry.routeId,
           routeShortName,
           serviceDateMs: entry.scheduleDate,
-          trips,
+          timezone: agencyTimezone(refs, routeRef?.agencyId),
+          trips: selected,
+          ...(selectors && {
+            selection: { ...selectors, total: trips.length, returned: selected.length },
+          }),
         };
       } catch (err) {
         classifyError(err, 'route', params.routeId, 'route_not_found');
@@ -939,9 +1136,10 @@ export class OneBusAwayService {
       try {
         // The SDK has no dedicated situation endpoint — call the REST API directly.
         // client.get() is public on the base APIClient class (core.d.ts line 105).
-        const resp = await this.client.get<unknown, { data: { entry: RawSituation } }>(
-          `/api/where/situation/${situationId}.json`,
-        );
+        const resp = await this.client.get<
+          unknown,
+          { data: { entry: RawSituation; references?: TimezoneReferences } }
+        >(`/api/where/situation/${situationId}.json`);
 
         if (!resp?.data)
           throw notFound(
@@ -955,7 +1153,7 @@ export class OneBusAwayService {
             notFoundData(situationId, 'situation_not_found'),
           );
 
-        return toSituationDetail(entry);
+        return toSituationDetail(entry, resp.data.references);
       } catch (err) {
         classifyError(err, 'situation', situationId, 'situation_not_found');
       }
@@ -964,7 +1162,7 @@ export class OneBusAwayService {
 
   // ----- Block -----
 
-  getBlock(blockId: string, ctx: Context): Promise<BlockResult> {
+  getBlock(blockId: string, ctx: Context, params: TripSelectors = {}): Promise<BlockResult> {
     ctx.log.debug('getBlock', { blockId });
     return this.paced(ctx, async () => {
       try {
@@ -979,11 +1177,10 @@ export class OneBusAwayService {
           throw notFound(`block "${blockId}" not found.`, notFoundData(blockId, 'block_not_found'));
         }
 
-        return {
-          blockId: entry.id,
-          activeServiceIds: config.activeServiceIds,
-          inactiveServiceIds: config.inactiveServiceIds ?? [],
-          trips: config.trips.map((t) => ({
+        const toConfiguration = (configuration: typeof config): BlockConfiguration => ({
+          activeServiceIds: configuration.activeServiceIds,
+          inactiveServiceIds: configuration.inactiveServiceIds ?? [],
+          trips: configuration.trips.map((t) => ({
             tripId: t.tripId,
             distanceAlongBlock: t.distanceAlongBlock,
             accumulatedSlackTime: t.accumulatedSlackTime,
@@ -995,6 +1192,43 @@ export class OneBusAwayService {
               ...(bst.stopTime.dropOffType != null && { dropOffType: bst.stopTime.dropOffType }),
             })),
           })),
+        });
+        const selectors = tripSelectors(params);
+        const selectConfiguration = (configuration: BlockConfiguration) => {
+          const selected = selectors
+            ? {
+                ...configuration,
+                trips: configuration.trips.filter((trip) =>
+                  matchesTrip(trip.tripId, trip.blockStopTimes, selectors),
+                ),
+              }
+            : configuration;
+          return {
+            configuration: selected,
+            counts: { total: configuration.trips.length, returned: selected.trips.length },
+          };
+        };
+        const first = selectConfiguration(toConfiguration(config));
+        const alternatives = configurations
+          .slice(1)
+          .map((configuration) => selectConfiguration(toConfiguration(configuration)));
+        const configurationCounts = [
+          first.counts,
+          ...alternatives.map((alternative) => alternative.counts),
+        ];
+        const selection = selectors
+          ? {
+              ...selectors,
+              total: configurationCounts.reduce((sum, counts) => sum + counts.total, 0),
+              returned: configurationCounts.reduce((sum, counts) => sum + counts.returned, 0),
+              configurationCounts,
+            }
+          : undefined;
+        return {
+          blockId: entry.id,
+          ...first.configuration,
+          alternateConfigurations: alternatives.map((alternative) => alternative.configuration),
+          ...(selection && { selection }),
         };
       } catch (err) {
         classifyError(err, 'block', blockId, 'block_not_found');

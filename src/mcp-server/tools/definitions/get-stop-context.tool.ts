@@ -24,6 +24,11 @@ export const getStopContext = tool('onebusaway_get_stop_context', {
   annotations: { readOnlyHint: true },
   input: arrivalsInput,
   output: z.object({
+    timezone: z
+      .string()
+      .describe(
+        'Validated timezone of the queried stop agency, or UTC when unavailable or invalid.',
+      ),
     stop: z
       .object({
         id: z.string().describe('Agency-prefixed stop ID.'),
@@ -146,11 +151,14 @@ export const getStopContext = tool('onebusaway_get_stop_context', {
     } else {
       lines.push('**Stop details:** none');
     }
-    lines.push(`**Current time:** ${fmtTime(result.currentTime)} (${result.currentTime})`);
+    lines.push(`**Timezone:** ${result.timezone}`);
+    lines.push(
+      `**Current time:** ${fmtTime(result.currentTime, result.timezone)} (${result.currentTime})`,
+    );
 
     lines.push(`\n## Arrivals (${result.arrivals.length})`);
     if (result.arrivals.length === 0) lines.push('**Arrivals:** none');
-    for (const a of result.arrivals) lines.push(...renderArrival(a));
+    for (const a of result.arrivals) lines.push(...renderArrival(a, result.timezone));
 
     lines.push(`\n## Service Alerts (${result.alerts.length})`);
     if (result.alerts.length === 0) lines.push('**Alerts:** none');

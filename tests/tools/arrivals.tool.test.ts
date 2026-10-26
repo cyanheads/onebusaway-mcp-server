@@ -25,6 +25,7 @@ beforeEach(() => {
 const NOW_MS = 1748000000000;
 
 const ARRIVALS_RESULT = {
+  timezone: 'America/Los_Angeles',
   stopId: '1_75403',
   stopName: 'University Way NE & NE 42nd St',
   currentTime: NOW_MS,
@@ -154,7 +155,14 @@ describe('getArrivals', () => {
     const withAlert = {
       ...ARRIVALS_RESULT,
       arrivals: [{ ...ARRIVALS_RESULT.arrivals[0]!, situationIds: ['sit_1'] }],
-      situations: [{ id: 'sit_1', summary: 'Delay on Route 44', description: 'Bridge closure.' }],
+      situations: [
+        {
+          timezone: 'UTC',
+          id: 'sit_1',
+          summary: 'Delay on Route 44',
+          description: 'Bridge closure.',
+        },
+      ],
     };
     const text = (getArrivals.format!(withAlert)[0] as { text: string }).text;
     expect(text).toContain('Delay on Route 44');

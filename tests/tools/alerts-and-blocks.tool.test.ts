@@ -4,6 +4,7 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
+import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getAlert } from '@/mcp-server/tools/definitions/get-alert.tool.js';
 import { getBlock } from '@/mcp-server/tools/definitions/get-block.tool.js';
@@ -29,6 +30,7 @@ beforeEach(() => {
 // ---- Fixtures ----
 
 const ALERT_FIXTURE = {
+  timezone: 'UTC',
   id: '1_sit_001',
   summary: 'Route 44 detour due to construction',
   description: 'Buses are detouring around NE 45th St.',
@@ -42,6 +44,7 @@ const ALERT_FIXTURE = {
 };
 
 const ALERT_SPARSE = {
+  timezone: 'UTC',
   id: '1_sit_002',
   summary: 'Minor delay',
   description: null,
@@ -55,6 +58,7 @@ const ALERT_SPARSE = {
 };
 
 const BLOCK_FIXTURE = {
+  alternateConfigurations: [],
   blockId: '1_block_101',
   activeServiceIds: ['1_svc_weekday'],
   inactiveServiceIds: [],
@@ -84,6 +88,7 @@ const BLOCK_FIXTURE = {
 };
 
 const BLOCK_SPARSE = {
+  alternateConfigurations: [],
   blockId: '1_block_sparse',
   activeServiceIds: [],
   inactiveServiceIds: ['1_svc_weekend'],
@@ -171,6 +176,55 @@ describe('getAlert', () => {
 // ---- getBlock ----
 
 describe('getBlock', () => {
+  it('wires selectors and renders aggregate and per-slot counts with an empty first slot', async () => {
+    const selection = {
+      tripId: '1_trip_A',
+      total: 4,
+      returned: 2,
+      configurationCounts: [
+        { total: 2, returned: 0 },
+        { total: 2, returned: 2 },
+      ],
+    };
+    mockService.getBlock.mockResolvedValue({
+      ...BLOCK_FIXTURE,
+      trips: [],
+      alternateConfigurations: [
+        { activeServiceIds: ['alternate'], inactiveServiceIds: [], trips: BLOCK_FIXTURE.trips },
+      ],
+      selection,
+    });
+    const result = await runToolContract(getBlock, { blockId: '1_block_101', tripId: '1_trip_A' });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      selection,
+      notice: expect.stringContaining('first returned configuration'),
+    });
+    expect(mockService.getBlock).toHaveBeenCalledWith('1_block_101', expect.anything(), {
+      tripId: '1_trip_A',
+    });
+    expectContentParity(result.content, result.structuredContent);
+  });
+
+  it('omits a blank trip ID and preserves the selector-free service call', async () => {
+    mockService.getBlock.mockResolvedValue(BLOCK_FIXTURE);
+    const result = await runToolContract(getBlock, { blockId: '1_block_101', tripId: '   ' });
+    expect(result.isError).toBeFalsy();
+    expect(mockService.getBlock).toHaveBeenCalledWith('1_block_101', expect.anything());
+    expect(result.structuredContent).not.toHaveProperty('selection');
+  });
+
+  it.each([
+    { tripId: 't', departureFromSec: 0 },
+    { departureFromSec: 2, departureBeforeSec: 2 },
+    { departureBeforeSec: -1 },
+  ])('rejects invalid block selector %j before I/O', async (selectors) => {
+    const result = await runToolContract(getBlock, { blockId: 'b', ...selectors });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ error: { code: -32602 } });
+    expect(result.content.length).toBeGreaterThan(0);
+    expect(mockService.getBlock).not.toHaveBeenCalled();
+  });
   it('returns block schedule with trips and stop times', async () => {
     const ctx = createToolContext(getBlock);
     mockService.getBlock.mockResolvedValue(BLOCK_FIXTURE);

@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.2.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/onebusaway-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.2.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/onebusaway-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/onebusaway-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun->=1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.2.1-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/onebusaway-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/onebusaway-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/onebusaway-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun->=1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -29,7 +29,7 @@
 
 ## Overview
 
-Real-time transit data and schedules from OneBusAway. It defaults to the Puget Sound instance (King County Metro, Sound Transit, Pierce Transit, Community Transit, and more) and works with any other OneBusAway instance. Find stops and routes, track live arrivals and vehicle positions, and pull full-day schedules, vehicle blocks, and service alerts. Runs as a stdio process, a local Streamable HTTP server, or the public hosted endpoint above.
+Real-time transit from OneBusAway, set up for Puget Sound (King County Metro, Sound Transit, Pierce Transit, Community Transit, and more) and compatible with any OneBusAway instance. Find stops and routes, track live arrivals and vehicle positions, and pull schedules and service alerts.
 
 ### Tools
 
@@ -154,7 +154,11 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 ### `onebusaway_get_block` <sub>tool</sub>
 
 - Single `blockId`, from `onebusaway_get_trip`; unknown IDs fail as `block_not_found`
-- The vehicle's trips for the service day in order, each with `distanceAlongBlock`, `accumulatedSlackTime` (layover seconds), and `blockStopTimes`; `activeServiceIds` / `inactiveServiceIds` show which service calendars apply
+- Top-level `trips`, `activeServiceIds`, and `inactiveServiceIds` describe the first returned configuration; `alternateConfigurations` preserves every remaining configuration in order. Service IDs are calendar conditions, not a claim that a configuration operates today
+- Each trip carries `distanceAlongBlock`, `accumulatedSlackTime` (layover seconds), and `blockStopTimes`. Optional exact `tripId` or `departureFromSec` / `departureBeforeSec` selects complete trips independently in every configuration, retaining empty configuration slots
+- With selectors, `selection.total` / `returned` count trip occurrences across configurations; `configurationCounts[0]` describes the top-level configuration, then one entry per alternative
+
+Example: `{"blockId":"<blockId from onebusaway_get_trip>","departureFromSec":86400,"departureBeforeSec":90000}` selects trips with any departure from 24:00 inclusive to 25:00 exclusive, retaining their complete stop sequences.
 
 ---
 
@@ -162,6 +166,8 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 
 - `agencyId` required, unknown agencies fail as `agency_not_found`; optional `routeId` is filtered client-side after all of the agency's vehicles are fetched
 - Each vehicle carries `position`, `orientation`, `phase`, `scheduleDeviation`, `tripId`, `nextStop`, and `predicted` (reporting real-time GPS); `limitExceeded` flags an upstream-capped list with no pagination
+- `tripId` prefers the active trip; route and headsign metadata resolve only from that trip. `orientation` preserves counter-clockwise degrees from east (0=east, 90=north, 180=west, 270=south), not a compass bearing
+- Records missing latitude or longitude are skipped: `omittedWithoutPosition` counts them across the agency, and `omittedWithoutPositionOnRoute` counts resolved matches when filtering by route. These counts are independent of upstream truncation
 
 ---
 
@@ -169,7 +175,11 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 
 - `stopId` required; optional `date` as a real `YYYY-MM-DD` calendar date, default (omitted or blank) today in the agency's timezone; unknown stops fail as `stop_not_found`
 - Departures grouped by route and direction, each with `scheduledDepartureTime` and `tripId`
+- `serviceDateMs` preserves the upstream schedule-date marker: query time for an omitted/blank date, instance-local midnight for an explicit date; it is not rounded to a service-day boundary
+- Optional `routeId`, `departureFromMs`, and `departureBeforeMs` combine with AND; time bounds are non-negative integer Unix milliseconds, lower inclusive and upper exclusive. Selected results omit empty directions/routes; `selection.total` / `returned` count departure rows before/after selection
 - Static schedule only; live predictions come from `onebusaway_get_arrivals`
+
+Example: `{"stopId":"1_75403","routeId":"1_100259","departureFromMs":1792882800000,"departureBeforeMs":1792886400000}` selects that route's departures in the given epoch interval.
 
 ---
 
@@ -177,7 +187,16 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 
 - `routeId` required; optional `date` as a real `YYYY-MM-DD` calendar date, default (omitted or blank) today; unknown routes fail as `route_not_found`
 - Every trip that day with `tripId`, `tripHeadsign`, `serviceId`, and its stop sequence
+- `serviceDateMs` preserves the upstream route `scheduleDate`, identifying the schedule's service day
+- Route, stop, headsign, and service metadata resolve from references first, retaining legacy metadata and grouping fallbacks where reference fields are absent or empty
+- Optional exact `tripId` or `departureFromSec` / `departureBeforeSec` selects whole trips having any departure in the interval. Bounds are non-negative integer GTFS seconds from midnight, including values beyond 86400; lower inclusive, upper exclusive. `selection.total` / `returned` count trips before/after selection
 - Static schedule only; live predictions come from `onebusaway_get_arrivals` at a stop
+
+Example: `{"routeId":"1_100259","departureFromSec":28800,"departureBeforeSec":32400}` selects trips with any departure from 08:00 inclusive to 09:00 exclusive.
+
+For route and block schedules, a nonblank `tripId` cannot be combined with departure bounds. Blank optional IDs mean omitted; either bound may be omitted, and two supplied bounds must increase. Without selectors, all three tools return their complete mapped response with no selection metadata or default cap. Selection counts describe only that upstream response, not omitted upstream service; a zero match is a successful result with a notice.
+
+Arrivals, stop context, trips, vehicles, schedules, and alerts include a validated IANA `timezone`; epoch clocks and date headings carry that zone explicitly. Stop tools use the queried stop's agency namespace, vehicles the requested agency, and trip/route schedules the referenced route's agency. Each alert resolves its own agency, route, trip, and stop scopes and uses their zone only when every scope resolves and agrees. Missing, invalid, unresolved, or conflicting zones use `UTC`, without additional requests. Epoch numbers and GTFS seconds remain unchanged, including schedule times beyond `24:00`.
 
 ---
 

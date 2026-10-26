@@ -30,6 +30,7 @@ const SCHED_ARR_2 = 8 * 3600 + 2 * 60; // 08:02
 const SCHED_DEP_2 = 8 * 3600 + 3 * 60; // 08:03
 
 const TRIP_RESULT = {
+  timezone: 'America/Los_Angeles',
   tripId: 'trip_abc',
   routeShortName: '44',
   tripHeadsign: 'Downtown Seattle',

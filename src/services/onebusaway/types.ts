@@ -59,6 +59,7 @@ export interface Situation {
   description: string | null;
   id: string;
   summary: string;
+  timezone: string;
 }
 
 // --- Situation detail (full alert) ---
@@ -90,6 +91,7 @@ export interface SituationDetail {
   reason: string | null;
   severity: string | null;
   summary: string;
+  timezone: string;
   url: string | null;
 }
 
@@ -110,12 +112,39 @@ export interface BlockTrip {
   tripId: string;
 }
 
-export interface BlockResult {
+export interface BlockConfiguration {
   activeServiceIds: string[];
-  blockId: string;
   inactiveServiceIds: string[];
   trips: BlockTrip[];
 }
+
+export interface BlockResult extends BlockConfiguration {
+  alternateConfigurations: BlockConfiguration[];
+  blockId: string;
+  selection?: TripSelection & { configurationCounts: SelectionCounts[] };
+}
+
+/** Local selectors over GTFS departure seconds; exact trip and bounds are exclusive. */
+export interface TripSelectors {
+  departureBeforeSec?: number;
+  departureFromSec?: number;
+  tripId?: string;
+}
+
+/** Local selectors over stop departure epoch milliseconds. */
+export interface StopSelectors {
+  departureBeforeMs?: number;
+  departureFromMs?: number;
+  routeId?: string;
+}
+
+export interface SelectionCounts {
+  returned: number;
+  total: number;
+}
+
+export type TripSelection = TripSelectors & SelectionCounts;
+export type StopSelection = StopSelectors & SelectionCounts;
 
 // --- Arrivals ---
 
@@ -140,6 +169,7 @@ export interface ArrivalsResult {
   situations: Situation[];
   stopId: string;
   stopName: string;
+  timezone: string;
 }
 
 // --- Stop context ---
@@ -152,6 +182,7 @@ export interface StopContextResult {
   arrivals: ArrivalEntry[];
   currentTime: number;
   stop: StopSummary | null;
+  timezone: string;
   /** Situation IDs the response referenced but left out of `references.situations`. */
   unresolvedSituationIds: string[];
 }
@@ -183,6 +214,7 @@ export interface TripResult {
   schedule: TripScheduleStop[] | null;
   situations: string[];
   status: TripStatus;
+  timezone: string;
   tripHeadsign: string;
   tripId: string;
 }
@@ -224,9 +256,11 @@ export interface StopScheduleRoute {
 
 export interface StopScheduleResult {
   routes: StopScheduleRoute[];
+  selection?: StopSelection;
   serviceDateMs: number;
   stopId: string;
   stopName: string;
+  timezone: string;
 }
 
 // --- Schedule for route ---
@@ -248,6 +282,8 @@ export interface RouteScheduleTrip {
 export interface RouteScheduleResult {
   routeId: string;
   routeShortName: string;
+  selection?: TripSelection;
   serviceDateMs: number;
+  timezone: string;
   trips: RouteScheduleTrip[];
 }

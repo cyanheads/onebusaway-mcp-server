@@ -243,6 +243,7 @@ describe('listAgencies edge cases', () => {
 describe('getArrivals edge cases', () => {
   it('handles stopsAway=0 (at stop) in format output', () => {
     const atStop = {
+      timezone: 'UTC',
       stopId: '1_75403',
       stopName: 'Test Stop',
       currentTime: NOW_MS,
@@ -270,6 +271,7 @@ describe('getArrivals edge cases', () => {
 
   it('handles stopsAway=-1 (arrived/passed) in format output', () => {
     const arrived = {
+      timezone: 'UTC',
       stopId: '1_75403',
       stopName: 'Test Stop',
       currentTime: NOW_MS,
@@ -297,6 +299,7 @@ describe('getArrivals edge cases', () => {
 
   it('handles null stopsAway gracefully', () => {
     const nullStops = {
+      timezone: 'UTC',
       stopId: '1_75403',
       stopName: 'Test Stop',
       currentTime: NOW_MS,
@@ -325,6 +328,7 @@ describe('getArrivals edge cases', () => {
 
   it('formats multiple situation alerts in arrivals output', () => {
     const withAlerts = {
+      timezone: 'UTC',
       stopId: '1_75403',
       stopName: 'Test Stop',
       currentTime: NOW_MS,
@@ -345,8 +349,13 @@ describe('getArrivals edge cases', () => {
         },
       ],
       situations: [
-        { id: 'sit_1', summary: 'Detour on 44', description: null },
-        { id: 'sit_2', summary: 'Reduced service', description: 'Due to construction.' },
+        { timezone: 'UTC', id: 'sit_1', summary: 'Detour on 44', description: null },
+        {
+          timezone: 'UTC',
+          id: 'sit_2',
+          summary: 'Reduced service',
+          description: 'Due to construction.',
+        },
       ],
     };
     const text = (getArrivals.format!(withAlerts)[0] as { text: string }).text;
@@ -358,6 +367,7 @@ describe('getArrivals edge cases', () => {
 
   it('formats early arrival correctly', () => {
     const early = {
+      timezone: 'UTC',
       stopId: '1_75403',
       stopName: 'Test Stop',
       currentTime: NOW_MS,
@@ -403,7 +413,12 @@ describe('getVehicles edge cases', () => {
       predicted: true,
     };
     const text = (
-      getVehicles.format!({ vehicles: [veryLate], limitExceeded: false })[0] as { text: string }
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [veryLate],
+        limitExceeded: false,
+      })[0] as { text: string }
     ).text;
     expect(text).toContain('60 min late');
   });
@@ -438,7 +453,12 @@ describe('getVehicles edge cases', () => {
       predicted: true,
     };
     const text = (
-      getVehicles.format!({ vehicles: [v1, v2], limitExceeded: false })[0] as { text: string }
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [v1, v2],
+        limitExceeded: false,
+      })[0] as { text: string }
     ).text;
     expect(text).toContain('bus_001');
     expect(text).toContain('bus_002');
@@ -461,7 +481,12 @@ describe('getVehicles edge cases', () => {
       predicted: false,
     };
     const text = (
-      getVehicles.format!({ vehicles: [v], limitExceeded: false })[0] as { text: string }
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [v],
+        limitExceeded: false,
+      })[0] as { text: string }
     ).text;
     expect(text).toContain('early');
     expect(text).toContain('bus_100');
@@ -473,6 +498,7 @@ describe('getVehicles edge cases', () => {
 describe('getTrip edge cases', () => {
   it('formats trip with active situation IDs', () => {
     const tripWithAlerts = {
+      timezone: 'UTC',
       tripId: 'trip_abc',
       routeShortName: '44',
       tripHeadsign: 'Downtown',
@@ -497,6 +523,7 @@ describe('getTrip edge cases', () => {
 
   it('renders null status fields as explicit "none", never omitted or "null"', () => {
     const noPos = {
+      timezone: 'UTC',
       tripId: 'trip_abc',
       routeShortName: '44',
       tripHeadsign: 'Downtown',
@@ -536,6 +563,7 @@ describe('getTrip edge cases', () => {
       distanceAlongTripMeters: i * 200,
     }));
     const bigTrip = {
+      timezone: 'UTC',
       tripId: 'trip_big',
       routeShortName: '44',
       tripHeadsign: 'Terminus',
@@ -566,6 +594,7 @@ describe('getAlert edge cases', () => {
   it('handles alert with open-ended active window (no "to")', async () => {
     const ctx = createToolContext(getAlert);
     const openEndedAlert = {
+      timezone: 'UTC',
       id: '1_sit_open',
       summary: 'Ongoing disruption',
       description: null,
@@ -587,6 +616,7 @@ describe('getAlert edge cases', () => {
 
   it('handles alert with no "from" time (open start)', () => {
     const openStartAlert = {
+      timezone: 'UTC',
       id: '1_sit_nostart',
       summary: 'Preexisting issue',
       description: null,
@@ -604,6 +634,7 @@ describe('getAlert edge cases', () => {
 
   it('formats alert with agency-scoped affect', () => {
     const agencyAlert = {
+      timezone: 'UTC',
       id: '1_sit_agency',
       summary: 'Agency-wide alert',
       description: null,
@@ -624,6 +655,7 @@ describe('getAlert edge cases', () => {
 
   it('formats alert with trip-scoped affect', () => {
     const tripAlert = {
+      timezone: 'UTC',
       id: '1_sit_trip',
       summary: 'Trip-specific alert',
       description: null,
@@ -641,6 +673,7 @@ describe('getAlert edge cases', () => {
 
   it('formats consequence without diversionStopIds', () => {
     const noDetour = {
+      timezone: 'UTC',
       id: '1_sit_nodiv',
       summary: 'Reduced service',
       description: null,
@@ -663,6 +696,7 @@ describe('getAlert edge cases', () => {
 describe('getBlock edge cases', () => {
   it('formats block with multiple trips and non-zero distanceAlongBlock', () => {
     const blockWithDist = {
+      alternateConfigurations: [],
       blockId: '1_block_202',
       activeServiceIds: ['svc_1'],
       inactiveServiceIds: [],
@@ -699,6 +733,7 @@ describe('getBlock edge cases', () => {
 
   it('formats GTFS midnight-overflow stop times (> 24h)', () => {
     const afterMidnight = {
+      alternateConfigurations: [],
       blockId: '1_block_203',
       activeServiceIds: [],
       inactiveServiceIds: [],
@@ -726,6 +761,7 @@ describe('getBlock edge cases', () => {
 describe('getScheduleForStop edge cases', () => {
   it('formats schedule with multiple routes and directions', () => {
     const multiRoute = {
+      timezone: 'UTC',
       stopId: '1_75403',
       stopName: 'Hub Stop',
       serviceDateMs: NOW_MS,
@@ -790,6 +826,7 @@ describe('getScheduleForStop edge cases', () => {
 describe('getScheduleForRoute edge cases', () => {
   it('formats route schedule with zero stops in a trip', () => {
     const emptyTripStops = {
+      timezone: 'UTC',
       routeId: '1_100259',
       routeShortName: '44',
       serviceDateMs: NOW_MS,
@@ -810,6 +847,7 @@ describe('getScheduleForRoute edge cases', () => {
   it('handles route schedule with multiple trips', async () => {
     const ctx = createToolContext(getScheduleForRoute);
     const manyTrips = {
+      timezone: 'UTC',
       routeId: '1_100259',
       routeShortName: '44',
       serviceDateMs: NOW_MS,

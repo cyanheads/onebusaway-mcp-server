@@ -5,6 +5,13 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { formatEpoch } from '@/mcp-server/tools/format-helpers.js';
+import {
+  checkTripSelectors,
+  renderSelection,
+  tripSelectionSchema,
+  tripSelectorFields,
+} from '@/mcp-server/tools/schedule-selection.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 /** Format seconds-from-midnight (GTFS schedule) as HH:MM. */
@@ -21,31 +28,48 @@ function fmtTimeSec(secs: number): string {
 export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
   title: 'Get Route Schedule',
   description:
-    'Full-day schedule for a route — all trips, stop sequences, and departure times for the specified date (defaults to today). Returns up to all trips for the route. For live predictions, use onebusaway_get_arrivals at specific stops instead.',
+    'Full-day schedule for a route — all trips, stop sequences, and departure times for the specified date (defaults to today). Optionally select an exact tripId or complete trips having any departure in a half-open GTFS-seconds interval; selection includes counts before and after filtering. Without selectors, returns all mapped trips with no default cap. For live predictions, use onebusaway_get_arrivals at specific stops instead.',
   annotations: { readOnlyHint: true },
-  input: z.object({
-    routeId: z
+  input: z
+    .object({
+      ...tripSelectorFields,
+      routeId: z
+        .string()
+        .min(1)
+        .describe(
+          'Agency-prefixed route ID (e.g. "1_100259"). Use onebusaway_find_routes or onebusaway_search_routes to discover IDs.',
+        ),
+      date: z
+        .union([
+          z.literal(''),
+          z.iso
+            .date({ error: 'Expected a real calendar date as YYYY-MM-DD (e.g. "2026-05-23")' })
+            .describe('A real calendar date in YYYY-MM-DD form (e.g. "2026-05-23").'),
+        ])
+        .optional()
+        .describe(
+          'Service date as YYYY-MM-DD (e.g. "2026-05-23"). Must be a real calendar date. Omit or leave blank for today.',
+        ),
+    })
+    .superRefine(checkTripSelectors),
+  output: z.object({
+    timezone: z
       .string()
-      .min(1)
       .describe(
-        'Agency-prefixed route ID (e.g. "1_100259"). Use onebusaway_find_routes or onebusaway_search_routes to discover IDs.',
+        'Validated timezone of the referenced route agency, or UTC when unavailable or invalid.',
       ),
-    date: z
-      .union([
-        z.literal(''),
-        z.iso
-          .date({ error: 'Expected a real calendar date as YYYY-MM-DD (e.g. "2026-05-23")' })
-          .describe('A real calendar date in YYYY-MM-DD form (e.g. "2026-05-23").'),
-      ])
+    selection: tripSelectionSchema
       .optional()
       .describe(
-        'Service date as YYYY-MM-DD (e.g. "2026-05-23"). Must be a real calendar date. Omit or leave blank for today.',
+        'Applied selectors and trip counts before and after local selection; absent without selectors.',
       ),
-  }),
-  output: z.object({
     routeId: z.string().describe('The queried route ID.'),
     routeShortName: z.string().describe('Route short name.'),
-    serviceDateMs: z.number().describe('Service date as Unix milliseconds.'),
+    serviceDateMs: z
+      .number()
+      .describe(
+        'Unchanged upstream service-date marker (scheduleDate) as Unix milliseconds, identifying the route schedule service day.',
+      ),
     trips: z
       .array(
         z
@@ -115,6 +139,11 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
       {
         routeId: input.routeId,
         ...(input.date && { date: input.date }),
+        ...(input.tripId?.trim() && { tripId: input.tripId }),
+        ...(input.departureFromSec !== undefined && { departureFromSec: input.departureFromSec }),
+        ...(input.departureBeforeSec !== undefined && {
+          departureBeforeSec: input.departureBeforeSec,
+        }),
       },
       ctx,
     );
@@ -130,7 +159,9 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
     });
     if (result.trips.length === 0) {
       ctx.enrich.notice(
-        `No trips found for route ${input.routeId}${input.date ? ` on ${input.date}` : ' today'}. Service may not operate on this date.`,
+        result.selection
+          ? 'No trips matched the applied selection in this response.'
+          : `No trips found for route ${input.routeId}${input.date ? ` on ${input.date}` : ' today'}. Service may not operate on this date.`,
       );
     }
 
@@ -138,18 +169,14 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
   },
 
   format: (result) => {
-    const serviceDate = new Date(result.serviceDateMs);
-    const serviceDateStr = serviceDate.toLocaleDateString('en-US', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+    const serviceDateStr = formatEpoch(result.serviceDateMs, result.timezone, 'date');
     const lines: string[] = [
       `## Schedule for Route ${result.routeShortName} (${result.routeId})`,
+      `**Timezone:** ${result.timezone}`,
       `**Service date:** ${serviceDateStr} (${result.serviceDateMs})`,
       `**Trips:** ${result.trips.length}`,
     ];
+    if (result.selection) lines.push(renderSelection(result.selection));
     for (const t of result.trips) {
       lines.push(`\n### Trip ${t.tripId} → ${t.tripHeadsign} (serviceId: ${t.serviceId})`);
       if (t.stops.length > 0) {

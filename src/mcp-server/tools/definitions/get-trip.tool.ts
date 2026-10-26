@@ -5,16 +5,8 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { coordsOrNone, orNone } from '@/mcp-server/tools/format-helpers.js';
+import { coordsOrNone, formatEpoch, orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
-
-/** Format Unix milliseconds as HH:MM. */
-function fmtTimeMs(ms: number): string {
-  const d = new Date(ms);
-  const h = d.getHours().toString().padStart(2, '0');
-  const m = d.getMinutes().toString().padStart(2, '0');
-  return `${h}:${m}`;
-}
 
 /** Format seconds-from-midnight (GTFS schedule) as HH:MM. */
 function fmtTimeSec(secs: number): string {
@@ -48,6 +40,9 @@ export const getTrip = tool('onebusaway_get_trip', {
       .describe('Whether to include the full stop sequence with times. Defaults to true.'),
   }),
   output: z.object({
+    timezone: z
+      .string()
+      .describe('Validated timezone of the trip route agency, or UTC when unavailable or invalid.'),
     tripId: z.string().describe('The queried trip ID.'),
     routeShortName: z.string().describe('Route short name (e.g. "44").'),
     tripHeadsign: z.string().describe('Destination sign text.'),
@@ -149,6 +144,7 @@ export const getTrip = tool('onebusaway_get_trip', {
     const lines: string[] = [
       `## Route ${result.routeShortName} → ${result.tripHeadsign}`,
       `**Trip ID:** ${result.tripId}`,
+      `**Timezone:** ${result.timezone}`,
       `**Phase:** ${s.phase} | **Predicted:** ${s.predicted}`,
       `**Schedule deviation:** ${devLabel} (${s.scheduleDeviation}s)`,
     ];
@@ -158,7 +154,9 @@ export const getTrip = tool('onebusaway_get_trip', {
     lines.push(`**Position:** ${coordsOrNone(s.position)}`);
     lines.push(`**Next stop:** ${orNone(s.nextStop)}`);
     lines.push(`**Closest stop:** ${orNone(s.closestStop)}`);
-    lines.push(`**Last update:** ${fmtTimeMs(s.lastUpdateTime)} (${s.lastUpdateTime})`);
+    lines.push(
+      `**Last update:** ${formatEpoch(s.lastUpdateTime, result.timezone)} (${s.lastUpdateTime})`,
+    );
 
     if (result.situations.length > 0) {
       lines.push(`**Active alerts:** ${result.situations.join(', ')}`);

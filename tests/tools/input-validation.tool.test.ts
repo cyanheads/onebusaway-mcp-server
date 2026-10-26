@@ -603,14 +603,26 @@ describe.each([
     definition: getScheduleForStop,
     idArgs: { stopId: '1_570' },
     service: mockService.getScheduleForStop,
-    result: { stopId: '1_570', stopName: '3rd Ave & Union St', serviceDateMs: 0, routes: [] },
+    result: {
+      timezone: 'UTC',
+      stopId: '1_570',
+      stopName: '3rd Ave & Union St',
+      serviceDateMs: 0,
+      routes: [],
+    },
   },
   {
     name: 'getScheduleForRoute',
     definition: getScheduleForRoute,
     idArgs: { routeId: '1_100229' },
     service: mockService.getScheduleForRoute,
-    result: { routeId: '1_100229', routeShortName: '5', serviceDateMs: 0, trips: [] },
+    result: {
+      timezone: 'UTC',
+      routeId: '1_100229',
+      routeShortName: '5',
+      serviceDateMs: 0,
+      trips: [],
+    },
   },
 ])('$name date must be a real YYYY-MM-DD calendar date (#32)', (tc) => {
   /** Runs the tool through the full contract path and returns the params the service received. */

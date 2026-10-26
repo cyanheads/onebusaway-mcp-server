@@ -3,10 +3,11 @@
  * @module tests/tools/schedules.tool.test
  */
 
-import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getScheduleForRoute } from '@/mcp-server/tools/definitions/get-schedule-for-route.tool.js';
 import { getScheduleForStop } from '@/mcp-server/tools/definitions/get-schedule-for-stop.tool.js';
+import { formatEpoch } from '@/mcp-server/tools/format-helpers.js';
 import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
@@ -38,6 +39,7 @@ const ARR_TIME_B = 8 * 3600 + 2 * 60; // 08:02
 const DEP_TIME_B = 8 * 3600 + 3 * 60; // 08:03
 
 const STOP_SCHEDULE = {
+  timezone: 'America/Los_Angeles',
   stopId: '1_75403',
   stopName: 'University Way NE & NE 42nd St',
   serviceDateMs: NOW_MS,
@@ -59,6 +61,7 @@ const STOP_SCHEDULE = {
 };
 
 const ROUTE_SCHEDULE = {
+  timezone: 'America/Los_Angeles',
   routeId: '1_100259',
   routeShortName: '44',
   serviceDateMs: NOW_MS,
@@ -88,6 +91,120 @@ const ROUTE_SCHEDULE = {
 // ---- getScheduleForStop ----
 
 describe('getScheduleForStop', () => {
+  it.each(['time', 'date', 'datetime'] as const)(
+    'formats %s with explicit zones independently of host TZ',
+    (kind) => {
+      const old = process.env.TZ;
+      try {
+        process.env.TZ = 'UTC';
+        const result = formatEpoch(1792988700000, 'America/Los_Angeles', kind);
+        process.env.TZ = 'Asia/Tokyo';
+        expect(formatEpoch(1792988700000, 'America/Los_Angeles', kind)).toBe(result);
+        expect(result).toContain('America/Los_Angeles');
+      } finally {
+        if (old === undefined) delete process.env.TZ;
+        else process.env.TZ = old;
+      }
+    },
+  );
+  it('keeps the same explicit-zone text under UTC and Tokyo host timezones', () => {
+    const old = process.env.TZ;
+    try {
+      process.env.TZ = 'UTC';
+      const utc = getScheduleForStop.format!(STOP_SCHEDULE);
+      process.env.TZ = 'Asia/Tokyo';
+      expect(getScheduleForStop.format!(STOP_SCHEDULE)).toEqual(utc);
+      expect(JSON.stringify(utc)).toContain('America/Los_Angeles');
+    } finally {
+      if (old === undefined) delete process.env.TZ;
+      else process.env.TZ = old;
+    }
+  });
+  it('renders the agency date and clock independently of the host timezone', () => {
+    const result = {
+      ...STOP_SCHEDULE,
+      timezone: 'America/Los_Angeles',
+      serviceDateMs: 1792988700000,
+      routes: [
+        {
+          ...STOP_SCHEDULE.routes[0]!,
+          directions: [
+            {
+              tripHeadsign: 'Night',
+              departures: [{ scheduledDepartureTime: 1792988700000, tripId: 'night' }],
+            },
+          ],
+        },
+      ],
+    };
+    const text = (getScheduleForStop.format!(result)[0] as { text: string }).text;
+    expect(text).toContain('21:25 America/Los_Angeles');
+    expect(text).toContain('Oct 25, 2026 America/Los_Angeles');
+  });
+  it('describes the stop marker without promising midnight', () => {
+    expect(getScheduleForStop.output.shape.serviceDateMs.description).toContain('query time');
+  });
+  it.each([undefined, '', '2026-10-25'])(
+    'preserves the upstream marker with date %s',
+    async (date) => {
+      const marker = date ? 1792911600000 : 1792988700123;
+      mockService.getScheduleForStop.mockResolvedValue({ ...STOP_SCHEDULE, serviceDateMs: marker });
+      const result = await getScheduleForStop.handler(
+        getScheduleForStop.input.parse({ stopId: '1_75403', date }),
+        createToolContext(getScheduleForStop),
+      );
+      expect(result.serviceDateMs).toBe(marker);
+      expect((getScheduleForStop.format!(result)[0] as { text: string }).text).toContain(
+        String(marker),
+      );
+    },
+  );
+  it('wires stop selectors and renders selection counts through the production contract', async () => {
+    const selection = {
+      routeId: '1_100259',
+      departureFromMs: 0,
+      departureBeforeMs: DEP_TIME_2,
+      total: 4,
+      returned: 2,
+    };
+    mockService.getScheduleForStop.mockResolvedValue({ ...STOP_SCHEDULE, selection });
+    const result = await runToolContract(getScheduleForStop, {
+      stopId: '1_75403',
+      routeId: '1_100259',
+      departureFromMs: 0,
+      departureBeforeMs: DEP_TIME_2,
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({ selection });
+    expect(mockService.getScheduleForStop).toHaveBeenCalledWith(
+      { stopId: '1_75403', routeId: '1_100259', departureFromMs: 0, departureBeforeMs: DEP_TIME_2 },
+      expect.anything(),
+    );
+    const text = result.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+    for (const value of [
+      'departureFromMs: 0',
+      `departureBeforeMs: ${DEP_TIME_2}`,
+      'total: 4',
+      'returned: 2',
+      'trip_abc',
+    ])
+      expect(text).toContain(value);
+  });
+
+  it.each([
+    { departureFromMs: 20, departureBeforeMs: 20 },
+    { departureFromMs: -1 },
+    { departureBeforeMs: 0.5 },
+  ])('rejects invalid stop selector %j before I/O', async (selectors) => {
+    const result = await runToolContract(getScheduleForStop, { stopId: 's', ...selectors });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ error: { code: -32602 } });
+    expect(result.content.length).toBeGreaterThan(0);
+    expect(mockService.getScheduleForStop).not.toHaveBeenCalled();
+  });
   it('returns stop schedule from service', async () => {
     const ctx = createToolContext(getScheduleForStop);
     mockService.getScheduleForStop.mockResolvedValue(STOP_SCHEDULE);
@@ -176,6 +293,41 @@ describe('getScheduleForStop', () => {
 // ---- getScheduleForRoute ----
 
 describe('getScheduleForRoute', () => {
+  it('wires exact trip selection and renders counts through the production contract', async () => {
+    const selection = { tripId: 'trip_abc', total: 8, returned: 1 };
+    mockService.getScheduleForRoute.mockResolvedValue({ ...ROUTE_SCHEDULE, selection });
+    const result = await runToolContract(getScheduleForRoute, {
+      routeId: '1_100259',
+      tripId: 'trip_abc',
+    });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({ selection });
+    expect(mockService.getScheduleForRoute).toHaveBeenCalledWith(
+      { routeId: '1_100259', tripId: 'trip_abc' },
+      expect.anything(),
+    );
+    const text = result.content
+      .filter((block) => block.type === 'text')
+      .map((block) => block.text)
+      .join('\n');
+    for (const value of ['tripId: trip_abc', 'total: 8', 'returned: 1'])
+      expect(text).toContain(value);
+  });
+
+  it.each([
+    { tripId: 't', departureFromSec: 0 },
+    { tripId: 't', departureBeforeSec: 1 },
+    { departureFromSec: 2, departureBeforeSec: 1 },
+    { departureFromSec: 0, departureBeforeSec: 0 },
+    { departureFromSec: -1 },
+    { departureBeforeSec: 1.5 },
+  ])('rejects invalid route selector %j before I/O', async (selectors) => {
+    const result = await runToolContract(getScheduleForRoute, { routeId: 'r', ...selectors });
+    expect(result.isError).toBe(true);
+    expect(result.structuredContent).toMatchObject({ error: { code: -32602 } });
+    expect(result.content.length).toBeGreaterThan(0);
+    expect(mockService.getScheduleForRoute).not.toHaveBeenCalled();
+  });
   it('returns route schedule from service', async () => {
     const ctx = createToolContext(getScheduleForRoute);
     mockService.getScheduleForRoute.mockResolvedValue(ROUTE_SCHEDULE);

@@ -22,6 +22,11 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
   annotations: { readOnlyHint: true },
   input: arrivalsInput,
   output: z.object({
+    timezone: z
+      .string()
+      .describe(
+        'Validated timezone of the queried stop agency, or UTC when unavailable or invalid.',
+      ),
     stopId: z.string().describe('The queried stop ID.'),
     stopName: z.string().describe('Stop name.'),
     currentTime: z
@@ -35,6 +40,9 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
         z
           .object({
             id: z.string().describe('Situation ID.'),
+            timezone: z
+              .string()
+              .describe('Validated timezone shared by all affected scopes, otherwise UTC.'),
             summary: z.string().describe('Short summary of the service alert.'),
             description: z
               .string()
@@ -123,14 +131,15 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
   format: (result) => {
     const lines: string[] = [
       `## Arrivals at ${result.stopName} (${result.stopId})`,
-      `**Current time:** ${fmtTime(result.currentTime)} (${result.currentTime})`,
+      `**Current time:** ${fmtTime(result.currentTime, result.timezone)} (${result.currentTime})`,
+      `**Timezone:** ${result.timezone}`,
       `**Arrivals:** ${result.arrivals.length}`,
     ];
 
     if (result.arrivals.length === 0) {
       lines.push('\n_No arrivals in the requested time window._');
     } else {
-      for (const a of result.arrivals) lines.push(...renderArrival(a));
+      for (const a of result.arrivals) lines.push(...renderArrival(a, result.timezone));
     }
 
     if (result.situations.length > 0) {
@@ -138,6 +147,7 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
       for (const s of result.situations) {
         lines.push(`\n### ${s.summary} (${s.id})`);
         lines.push(`**Description:** ${orNone(s.description)}`);
+        lines.push(`**Timezone:** ${s.timezone}`);
       }
     }
 

@@ -715,6 +715,7 @@ describe('response mapping on recorded live payloads', () => {
     h.methods.get.mockResolvedValue(loadFixture('situation-1_94915.json'));
     const alert = await getOneBusAwayService().getAlert('1_94915', ctx);
     expect(alert).toEqual({
+      timezone: 'UTC',
       id: '1_94915',
       summary:
         "Real time bus arrival and tracking is currently unavailable for Route 21 in Metro's Online Trip Planner and Text for Departures tool.",
@@ -774,6 +775,7 @@ describe('response mapping on recorded live payloads', () => {
     expect(result.arrivals[0]!.situationIds).toEqual(['1_94915', '1_missing']);
     expect(result.situations).toEqual([
       {
+        timezone: 'America/Los_Angeles',
         id: '1_94915',
         summary: expect.stringMatching(/^Real time bus arrival and tracking/),
         description: expect.stringMatching(/^Due to technical problems/),
@@ -797,6 +799,7 @@ describe('get_arrivals situations include stop-level alerts (#29)', () => {
     const result = await getOneBusAwayService().getArrivals({ stopId: '1_570' }, ctx);
     expect(result.situations.map((s) => s.id)).toEqual(STOP_LEVEL);
     expect(result.situations[1]).toEqual({
+      timezone: 'America/Los_Angeles',
       id: '1_94915',
       summary: expect.stringMatching(/^Real time bus arrival and tracking/),
       description: expect.stringMatching(/^Due to technical problems/),

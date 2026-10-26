@@ -14,6 +14,28 @@
  */
 export const EMPTY = 'none';
 
+/** Render an epoch using the result's validated zone, including its unambiguous label. */
+export function formatEpoch(
+  ms: number,
+  timezone: string,
+  kind: 'time' | 'date' | 'datetime' = 'time',
+): string {
+  const options: Intl.DateTimeFormatOptions =
+    kind === 'time'
+      ? { hour: '2-digit', minute: '2-digit', hourCycle: 'h23' }
+      : kind === 'date'
+        ? { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' }
+        : {
+            year: 'numeric',
+            month: 'short',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hourCycle: 'h23',
+          };
+  return `${new Intl.DateTimeFormat('en-US', { ...options, timeZone: timezone }).format(ms)} ${timezone}`;
+}
+
 /**
  * Render a nullable scalar, or {@link EMPTY} when it is null, undefined, or an
  * empty string. Numeric `0` is a real value and renders as `"0"` — only null,

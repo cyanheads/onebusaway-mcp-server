@@ -283,7 +283,12 @@ describe('listAgencies security', () => {
 describe('getVehicles security', () => {
   it('format output does not contain API key', async () => {
     const text = (
-      getVehicles.format!({ vehicles: [], limitExceeded: false })[0] as {
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [],
+        limitExceeded: false,
+      })[0] as {
         text: string;
       }
     ).text;
@@ -297,6 +302,7 @@ describe('getTrip security', () => {
   it('format output does not contain API key', () => {
     const result = {
       tripId: 'trip_abc',
+      timezone: 'UTC',
       routeShortName: '44',
       tripHeadsign: 'Downtown Seattle',
       blockId: null,
@@ -399,6 +405,7 @@ describe('getAlert security', () => {
 describe('getBlock security', () => {
   it('format output does not contain API key', () => {
     const block = {
+      alternateConfigurations: [],
       blockId: '1_block_101',
       activeServiceIds: [],
       inactiveServiceIds: [],

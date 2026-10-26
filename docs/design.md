@@ -9,15 +9,15 @@
 | `onebusaway_get_arrivals` | Real-time arrivals and departures at a stop. Returns predicted and scheduled times, vehicle positions, schedule deviation, and any active service alerts. | `stopId`, `minutesBefore?` (0–60), `minutesAfter?` (0–240) | `readOnlyHint: true` |
 | `onebusaway_get_stop_context` | Stop details, real-time arrivals, and full detail for every service alert at the stop, from one upstream request. | `stopId`, `minutesBefore?` (0–60), `minutesAfter?` (0–240) | `readOnlyHint: true` |
 | `onebusaway_get_alert` | Full detail for one service alert (situation) by ID. | `situationId` | `readOnlyHint: true` |
-| `onebusaway_get_block` | Every trip one vehicle runs in a service day, in order, with stop times. | `blockId` | `readOnlyHint: true` |
+| `onebusaway_get_block` | Ordered trips and calendar conditions for the first configuration and every alternative. | `blockId`, `tripId?` or `departureFromSec?` / `departureBeforeSec?` | `readOnlyHint: true` |
 | `onebusaway_find_stops` | Find bus stops near a location or by stop code. Returns stop IDs, names, served routes, and wheelchair accessibility. | `lat`, `lon`, `radius?`, `query?` | `readOnlyHint: true` |
 | `onebusaway_find_routes` | Find transit routes near a location or search by name. Returns route IDs, short names, descriptions, and agency. | `lat`, `lon`, `radius?`, `latSpan?`, `lonSpan?`, `query?` | `readOnlyHint: true` |
 | `onebusaway_get_stop` | Fetch details for a specific stop by ID. Returns name, coordinates, served routes, and wheelchair accessibility. | `stopId` | `readOnlyHint: true` |
 | `onebusaway_get_route` | Fetch details for a specific route by ID, including schedule URL and route color. | `routeId` | `readOnlyHint: true` |
-| `onebusaway_get_schedule_for_stop` | Full day schedule for a stop — all departures by route and direction. | `stopId`, `date?` (`YYYY-MM-DD`) | `readOnlyHint: true` |
-| `onebusaway_get_schedule_for_route` | Full day schedule for a route — all trips and stop sequences. | `routeId`, `date?` (`YYYY-MM-DD`) | `readOnlyHint: true` |
+| `onebusaway_get_schedule_for_stop` | Departure schedule by route and direction, optionally selecting rows. | `stopId`, `date?` (`YYYY-MM-DD`), `routeId?`, `departureFromMs?`, `departureBeforeMs?` | `readOnlyHint: true` |
+| `onebusaway_get_schedule_for_route` | Route trips and complete stop sequences, optionally selected. | `routeId`, `date?` (`YYYY-MM-DD`), `tripId?` or `departureFromSec?` / `departureBeforeSec?` | `readOnlyHint: true` |
 | `onebusaway_get_trip` | Real-time status and stop sequence for an active trip. Returns vehicle position, schedule deviation, and stops remaining. | `tripId`, `serviceDateMs?`, `includeSchedule?` | `readOnlyHint: true` |
-| `onebusaway_get_vehicles` | Real-time vehicle positions for all active vehicles for an agency, optionally filtered to one route (client-side). | `agencyId`, `routeId?` | `readOnlyHint: true` |
+| `onebusaway_get_vehicles` | Real-time vehicle positions for an agency, optionally filtered to one route, with missing-position counts and counter-clockwise orientation from east. | `agencyId`, `routeId?` | `readOnlyHint: true` |
 | `onebusaway_list_agencies` | List all transit agencies served by this OneBusAway instance, with agency IDs needed for other calls. | (none) | `readOnlyHint: true`, `openWorldHint: false` |
 | `onebusaway_list_routes_for_agency` | List all routes operated by an agency. | `agencyId` | `readOnlyHint: true`, `openWorldHint: false` |
 | `onebusaway_search_stops` | Search for stops by name or code string. Useful for resolving a stop name to an ID. | `query`, `maxCount?` | `readOnlyHint: true` |
@@ -133,6 +133,7 @@ Both bounds are enforced at the schema: OneBusAway binds the two values to a 32-
 stopId: string
 stopName: string
 currentTime: number — Server time as Unix milliseconds, for computing countdown timers.
+timezone: string — Validated queried-stop agency zone, otherwise UTC.
 arrivals: Array of:
   routeShortName: string
   tripHeadsign: string
@@ -148,6 +149,7 @@ arrivals: Array of:
   situationIds: string[]
 situations: Array of: — Active service alerts on the stop itself and those referenced by arrivals, each once.
   id: string
+  timezone: string — Common valid affected-scope zone, otherwise UTC.
   summary: string
   description: string | null
 ```
@@ -173,6 +175,7 @@ An upstream HTTP 400 on any tool surfaces as a non-retryable `ValidationError` c
 **Output schema:**
 ```
 stop: { id, code, name, lat, lon, direction, wheelchairBoarding } | null — The onebusaway_get_stop fields minus routeIds (the references copy lists only routes in this response). Null when the response omits the stop.
+timezone: string — Validated queried-stop agency zone, otherwise UTC.
 currentTime: number — Server time as Unix milliseconds.
 arrivals: Array — Same shape as onebusaway_get_arrivals.
 alerts: Array — Same shape as onebusaway_get_alert; the union of stop-level and arrival-level situation IDs, each once.
@@ -315,6 +318,9 @@ url: string | null — Agency schedule page URL.
 ```
 stopId: string — Agency-prefixed stop ID.
 date: string? — A real calendar date as YYYY-MM-DD (e.g. "2026-05-23"). Omitted or "" means today in the agency's timezone.
+routeId: string? — Exact route ID; blank means omitted, combined with departure bounds using AND.
+departureFromMs: integer? — Non-negative inclusive departure lower bound in Unix milliseconds.
+departureBeforeMs: integer? — Non-negative exclusive departure upper bound; must exceed the lower bound when both exist.
 ```
 
 `date` is validated at the schema. OneBusAway parses it leniently — an impossible date such as `2026-99-99` rolls over to another day, an unpadded or datetime form is truncated, and an all-digit value is read as epoch milliseconds — so anything but a real `YYYY-MM-DD` date is rejected before the request.
@@ -323,7 +329,8 @@ date: string? — A real calendar date as YYYY-MM-DD (e.g. "2026-05-23"). Omitte
 ```
 stopId: string
 stopName: string
-serviceDateMs: number — Upstream's `entry.date` as Unix ms: local midnight of the requested date, or the request time when no date was given.
+serviceDateMs: number — Unchanged upstream `entry.date` in Unix ms: instance-local midnight for an explicit date, query time for omitted/blank dates.
+timezone: string — Validated queried-stop agency zone, otherwise UTC.
 routes: Array of:
   routeId: string — For follow-up onebusaway_get_route or onebusaway_get_schedule_for_route calls.
   routeShortName: string
@@ -332,7 +339,10 @@ routes: Array of:
     departures: Array of:
       scheduledDepartureTime: number — Unix ms.
       tripId: string — For follow-up onebusaway_get_trip calls.
+selection?: { routeId?, departureFromMs?, departureBeforeMs?, total, returned } — Departure counts before/after local selection.
 ```
+
+Selectors filter individual departure rows and remove empty directions/routes. With no selector, preserve the complete response and omit selection metadata; an empty match succeeds with a notice. Counts refer only to the single upstream response.
 
 **Error contract:**
 ```
@@ -351,6 +361,9 @@ routes: Array of:
 ```
 routeId: string — Agency-prefixed route ID.
 date: string? — A real calendar date as YYYY-MM-DD, validated as for onebusaway_get_schedule_for_stop. Omitted or "" means today.
+tripId: string? — Exact trip ID; blank means omitted. Mutually exclusive with departure bounds.
+departureFromSec: integer? — Non-negative inclusive GTFS departure lower bound, including values beyond 86400.
+departureBeforeSec: integer? — Non-negative exclusive GTFS departure upper bound; must exceed the lower bound when both exist.
 ```
 
 **Output schema:**
@@ -358,12 +371,16 @@ date: string? — A real calendar date as YYYY-MM-DD, validated as for onebusawa
 routeId: string
 routeShortName: string
 serviceDateMs: number
+timezone: string — Validated referenced-route agency zone, otherwise UTC.
 trips: Array of:
   tripId: string — For follow-up onebusaway_get_trip calls.
   tripHeadsign: string
   serviceId: string
   stops: Array of: { stopId: string, stopName: string, arrivalTime: number, departureTime: number }
+selection?: { tripId?, departureFromSec?, departureBeforeSec?, total, returned } — Trip counts before/after local selection.
 ```
+
+Route, stop, headsign, and service metadata resolve field by field from references, then legacy entry metadata, then grouping/stop-time and ID/empty fallbacks. Reference trips supply metadata only; scheduled enumeration and stop order come from the existing entry/grouping paths. Selectors match whole trips by ID or any departure in the half-open interval, retaining every stop. With no selector, preserve the complete response and omit selection metadata; an empty match succeeds with a notice. No default cap or continuation cursor is applied.
 
 **Error contract:**
 ```
@@ -390,6 +407,7 @@ includeSchedule: boolean (default true) — Whether to include the full stop seq
 tripId: string
 routeShortName: string
 tripHeadsign: string
+timezone: string — Validated trip-route agency zone, otherwise UTC.
 blockId: string | null — For follow-up onebusaway_get_block calls.
 status:
   phase: string — "in_progress" | "layover_before" | "layover_during" | etc.
@@ -427,6 +445,7 @@ situationId: string — From onebusaway_get_arrivals (situations[].id or arrival
 id: string
 summary: string
 description: string | null
+timezone: string — Common valid affected-scope zone, otherwise UTC.
 reason: string | null — TPEG reason code.
 severity: string | null
 consequenceMessage: string | null
@@ -452,19 +471,26 @@ url: string | null
 **Input schema:**
 ```
 blockId: string — From onebusaway_get_trip.
+tripId: string? — Exact trip ID; blank means omitted. Mutually exclusive with departure bounds.
+departureFromSec: integer? — Non-negative inclusive GTFS departure lower bound, including values beyond 86400.
+departureBeforeSec: integer? — Non-negative exclusive GTFS departure upper bound; must exceed the lower bound when both exist.
 ```
 
 **Output schema:**
 ```
 blockId: string
-activeServiceIds: string[]
-inactiveServiceIds: string[]
+activeServiceIds: string[] — Calendar IDs required active for the first returned configuration.
+inactiveServiceIds: string[] — Calendar IDs required inactive for the first returned configuration.
 trips: Array of:
   tripId: string
   distanceAlongBlock: number — Meters from block start.
   accumulatedSlackTime: number — Layover seconds before this trip.
   blockStopTimes: Array of: { stopId: string, arrivalTime: number, departureTime: number, pickupType?: number, dropOffType?: number } — GTFS seconds from midnight.
+alternateConfigurations: Array of: { activeServiceIds: string[], inactiveServiceIds: string[], trips: same trip shape } — Every remaining configuration in upstream order, including empty slots.
+selection?: { tripId?, departureFromSec?, departureBeforeSec?, total, returned, configurationCounts: Array of { total, returned } }
 ```
+
+Top-level fields always describe the first returned configuration; the endpoint accepts no date, and calendar conditions do not establish today's active schedule. Selectors match complete trips independently in every configuration, preserving slots and service IDs. Aggregate counts count trip occurrences, including repeated IDs in different configurations. `configurationCounts[0]` is the top-level slot; each subsequent entry corresponds to the next alternative. Selection metadata is omitted when no selector is supplied.
 
 **Error contract:**
 ```
@@ -477,7 +503,7 @@ trips: Array of:
 
 ### `onebusaway_get_vehicles`
 
-**Description:** Real-time positions of all active vehicles for an agency. Optionally filter to a single route. Returns GPS coordinates, heading, schedule deviation, and current trip. Useful for "where are all the buses on route X right now?"
+**Description:** Real-time positions of active vehicles for an agency. Optionally filter to a single route. Returns GPS coordinates, counter-clockwise orientation from east, schedule deviation, and current trip, with counts of records omitted for missing position coordinates.
 
 **Input schema:**
 ```
@@ -497,10 +523,16 @@ vehicles: Array of:
   lastUpdateTime: number
   phase: string
   scheduleDeviation: number | null
-  orientation: number | null — Heading in degrees (0=north).
+  orientation: number | null — Counter-clockwise degrees from east (0=east, 90=north, 180=west, 270=south), not a compass bearing.
   nextStop: string | null
   predicted: boolean
+limitExceeded: boolean — Upstream capped the list; no pagination is available.
+omittedWithoutPosition: number — Agency records lacking either latitude or longitude, before route filtering.
+omittedWithoutPositionOnRoute: number? — Omitted records whose current trip resolves to the requested route; present with a route filter.
+timezone: string — Validated requested-agency zone, otherwise UTC.
 ```
+
+The current trip is `tripStatus.activeTripId || vehicle.tripId || null`. Its reference alone supplies route and headsign metadata, so an unreferenced active trip retains its ID with null metadata. The route filter and route omission count use that same identity. Missing coordinates exclude a record from positions; zero coordinates remain valid, and status position is not substituted. Omission, upstream overflow, and empty-result notices are independent.
 
 **Error contract:**
 ```
@@ -693,6 +725,12 @@ The SDK exposes `arrivalsAndDeparturesForLocation` which returns arrivals near a
 **Decision: omit.**
 
 Returns active trips near a location but the response shape is sparse (live probe confirmed zero trips returned near downtown Seattle with a 500m radius). The use case — "what buses are driving near me right now?" — is better served by `get_vehicles` (which returns all vehicles for an agency with full status) than a location-filtered trip list with thin data. Deferred.
+
+### Timezone and schedule-date semantics
+
+**Decision: resolve timezone from the queried entity and render epochs with an explicit IANA zone.** Stop tools resolve the stop's agency namespace; vehicle results resolve the requested agency; trip and route schedules resolve their referenced route's agency. Each alert, including inline summaries, independently resolves every affected agency, route, trip, and stop scope. A common valid zone is used only when all scopes resolve and agree; otherwise the result carries `UTC`. Existing response references are sufficient evidence; no extra requests are made for timezone enrichment.
+
+Schedule markers remain exact upstream numbers. Stop `serviceDateMs` is the upstream `date`: query time for omitted/blank dates and instance-local midnight for explicit dates. Route `serviceDateMs` preserves the distinct upstream service-date marker, `scheduleDate`. GTFS seconds are not epochs and retain hours beyond 24.
 
 ### Service alerts as inline data
 

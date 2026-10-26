@@ -5,21 +5,13 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { coords, EMPTY, orNone } from '@/mcp-server/tools/format-helpers.js';
+import { coords, EMPTY, formatEpoch, orNone } from '@/mcp-server/tools/format-helpers.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
-
-/** Format Unix milliseconds as HH:MM. */
-function fmtTime(ms: number): string {
-  const d = new Date(ms);
-  const h = d.getHours().toString().padStart(2, '0');
-  const m = d.getMinutes().toString().padStart(2, '0');
-  return `${h}:${m}`;
-}
 
 export const getVehicles = tool('onebusaway_get_vehicles', {
   title: 'Get Real-Time Vehicle Positions',
   description:
-    'Real-time positions of all active vehicles for an agency. Optionally filter to a single route (client-side). Returns GPS coordinates, heading, schedule deviation, and current trip. Useful for "where are all the buses on route X right now?" Use agencyId values from onebusaway_list_agencies.',
+    'Real-time positions of active vehicles for an agency. Optionally filter to a single route (client-side). Returns GPS coordinates, counter-clockwise orientation from east, schedule deviation, and current trip. Reports agency records omitted for missing position coordinates. Use agencyId values from onebusaway_list_agencies.',
   annotations: { readOnlyHint: true },
   input: z.object({
     agencyId: z
@@ -36,12 +28,31 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
       ),
   }),
   output: z.object({
+    timezone: z
+      .string()
+      .describe('Validated timezone of the requested agency, or UTC when unavailable or invalid.'),
+    omittedWithoutPosition: z
+      .number()
+      .describe(
+        'Agency-wide records omitted because latitude or longitude is missing, counted before route filtering.',
+      ),
+    omittedWithoutPositionOnRoute: z
+      .number()
+      .optional()
+      .describe(
+        'Omitted records whose canonical current trip resolves to the requested route; present only with a route filter.',
+      ),
     vehicles: z
       .array(
         z
           .object({
             vehicleId: z.string().describe('Vehicle ID.'),
-            tripId: z.string().nullable().describe('Current trip ID, or null if not on a trip.'),
+            tripId: z
+              .string()
+              .nullable()
+              .describe(
+                'Active trip ID, falling back to the vehicle trip ID when absent; null if neither is available. All trip metadata resolves only from this ID.',
+              ),
             routeId: z.string().nullable().describe('Current route ID, or null.'),
             routeShortName: z.string().nullable().describe('Route short name, or null.'),
             tripHeadsign: z.string().nullable().describe('Destination sign text, or null.'),
@@ -64,7 +75,9 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
             orientation: z
               .number()
               .nullable()
-              .describe('Heading in degrees (0=north, 90=east), or null.'),
+              .describe(
+                'Counter-clockwise degrees from east (0=east, 90=north, 180=west, 270=south), not a compass bearing; null if unavailable.',
+              ),
             nextStop: z.string().nullable().describe('Stop ID of the next stop, or null.'),
             predicted: z
               .boolean()
@@ -107,7 +120,7 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
       .string()
       .optional()
       .describe(
-        'Guidance when no vehicles were found — e.g. the route may not be currently active, or the agency may not have real-time data.',
+        'Independent notices for records omitted without position, upstream truncation, and an empty returned list.',
       ),
   },
 
@@ -130,25 +143,41 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
       ...(input.routeId && { routeId: input.routeId }),
       count: result.vehicles.length,
     });
+    const notices: string[] = [];
+    if (result.omittedWithoutPosition > 0) {
+      notices.push(
+        `${result.omittedWithoutPosition} agency records omitted without position coordinates.`,
+      );
+    }
+    if (result.limitExceeded) {
+      notices.push(
+        'Results truncated upstream — some active vehicles were omitted; this endpoint has no pagination to retrieve the rest.',
+      );
+    }
     if (result.vehicles.length === 0) {
-      ctx.enrich.notice(
+      notices.push(
         input.routeId
           ? `No active vehicles found on route ${input.routeId}. The route may not be currently running or may not have real-time data.`
           : `No active vehicles found for agency ${input.agencyId}. Vehicles may not be running at this time.`,
       );
-    } else if (result.limitExceeded) {
-      ctx.enrich.notice(
-        'Results truncated upstream — some active vehicles were omitted; this endpoint has no pagination to retrieve the rest.',
-      );
     }
+    if (notices.length) ctx.enrich.notice(notices.join(' '));
 
-    return { vehicles: result.vehicles, limitExceeded: result.limitExceeded };
+    return result;
   },
 
   format: (result) => {
     const lines: string[] = [
+      `**Timezone:** ${result.timezone}`,
       `**Active vehicles:** ${result.vehicles.length} | **Limit exceeded:** ${result.limitExceeded}`,
+      `**Omitted without position (agency):** ${result.omittedWithoutPosition}`,
     ];
+    if (result.omittedWithoutPositionOnRoute !== undefined) {
+      lines.push(`**Omitted without position (route):** ${result.omittedWithoutPositionOnRoute}`);
+    }
+    if (result.omittedWithoutPosition > 0) {
+      lines.push('> Records without latitude or longitude are omitted from positions.');
+    }
     if (result.limitExceeded) {
       lines.push('> Results truncated upstream — some vehicles omitted (no pagination available).');
     }
@@ -176,9 +205,13 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
               : `${Math.round(Math.abs(v.scheduleDeviation) / 60)} min early`;
         lines.push(`**Schedule deviation:** ${devLabel} (${v.scheduleDeviation}s)`);
       }
-      lines.push(`**Heading:** ${orNone(v.orientation, (o) => `${o}°`)}`);
+      lines.push(
+        `**Orientation (0=east, counter-clockwise):** ${orNone(v.orientation, (o) => `${o}°`)}`,
+      );
       lines.push(`**Next stop:** ${orNone(v.nextStop)}`);
-      lines.push(`**Last update:** ${fmtTime(v.lastUpdateTime)} (${v.lastUpdateTime})`);
+      lines.push(
+        `**Last update:** ${formatEpoch(v.lastUpdateTime, result.timezone)} (${v.lastUpdateTime})`,
+      );
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },

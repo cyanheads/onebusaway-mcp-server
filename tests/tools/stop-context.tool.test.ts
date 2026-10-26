@@ -139,7 +139,11 @@ describe('onebusaway_get_stop_context', () => {
     const { structured } = await run(arrivalsFixture());
     h.methods.get.mockResolvedValueOnce(loadFixture('situation-1_94915.json'));
     const alert = await getOneBusAwayService().getAlert('1_94915', createMockContext());
-    expect(structured.alerts.find((a) => a.id === '1_94915')).toEqual(alert);
+    expect(alert.timezone).toBe('UTC');
+    expect(structured.alerts.find((a) => a.id === '1_94915')).toEqual({
+      ...alert,
+      timezone: 'America/Los_Angeles',
+    });
   });
 
   it('lists an alert on both the stop and an arrival once', async () => {

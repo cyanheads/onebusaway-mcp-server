@@ -5,43 +5,60 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { formatEpoch } from '@/mcp-server/tools/format-helpers.js';
+import {
+  checkStopSelectors,
+  renderSelection,
+  stopSelectionSchema,
+  stopSelectorFields,
+} from '@/mcp-server/tools/schedule-selection.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
-
-function fmtTime(ms: number): string {
-  const d = new Date(ms);
-  const h = d.getHours().toString().padStart(2, '0');
-  const m = d.getMinutes().toString().padStart(2, '0');
-  return `${h}:${m}`;
-}
 
 export const getScheduleForStop = tool('onebusaway_get_schedule_for_stop', {
   title: 'Get Stop Schedule',
   description:
-    "Full-day departure schedule for a stop. Lists every departure by route and direction for the specified date (defaults to today). Useful for planning or when real-time data isn't needed. For live predictions, use onebusaway_get_arrivals instead.",
+    'Full-day departure schedule for a stop. Lists every departure by route and direction for the specified date (defaults to today). Optionally filter departure rows by routeId and a half-open Unix-millisecond interval; selection includes counts before and after filtering. Without selectors, returns the complete mapped schedule with no default cap. For live predictions, use onebusaway_get_arrivals instead.',
   annotations: { readOnlyHint: true },
-  input: z.object({
-    stopId: z
+  input: z
+    .object({
+      ...stopSelectorFields,
+      stopId: z
+        .string()
+        .min(1)
+        .describe(
+          'Agency-prefixed stop ID (e.g. "1_75403"). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
+        ),
+      date: z
+        .union([
+          z.literal(''),
+          z.iso
+            .date({ error: 'Expected a real calendar date as YYYY-MM-DD (e.g. "2026-05-23")' })
+            .describe('A real calendar date in YYYY-MM-DD form (e.g. "2026-05-23").'),
+        ])
+        .optional()
+        .describe(
+          'Service date as YYYY-MM-DD (e.g. "2026-05-23"). Must be a real calendar date. Omit or leave blank for today in the agency\'s timezone.',
+        ),
+    })
+    .superRefine(checkStopSelectors),
+  output: z.object({
+    timezone: z
       .string()
-      .min(1)
       .describe(
-        'Agency-prefixed stop ID (e.g. "1_75403"). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
+        'Validated timezone of the queried stop agency, or UTC when unavailable or invalid.',
       ),
-    date: z
-      .union([
-        z.literal(''),
-        z.iso
-          .date({ error: 'Expected a real calendar date as YYYY-MM-DD (e.g. "2026-05-23")' })
-          .describe('A real calendar date in YYYY-MM-DD form (e.g. "2026-05-23").'),
-      ])
+    selection: stopSelectionSchema
       .optional()
       .describe(
-        'Service date as YYYY-MM-DD (e.g. "2026-05-23"). Must be a real calendar date. Omit or leave blank for today in the agency\'s timezone.',
+        'Applied selectors and departure counts before and after local selection; absent without selectors.',
       ),
-  }),
-  output: z.object({
     stopId: z.string().describe('The queried stop ID.'),
     stopName: z.string().describe('Stop name.'),
-    serviceDateMs: z.number().describe('Service date as Unix milliseconds (start of service day).'),
+    serviceDateMs: z
+      .number()
+      .describe(
+        'Unchanged upstream schedule-date marker in Unix milliseconds: query time when date is omitted or blank, instance-local midnight for an explicit date.',
+      ),
     routes: z
       .array(
         z
@@ -123,6 +140,11 @@ export const getScheduleForStop = tool('onebusaway_get_schedule_for_stop', {
       {
         stopId: input.stopId,
         ...(input.date && { date: input.date }),
+        ...(input.routeId?.trim() && { routeId: input.routeId }),
+        ...(input.departureFromMs !== undefined && { departureFromMs: input.departureFromMs }),
+        ...(input.departureBeforeMs !== undefined && {
+          departureBeforeMs: input.departureBeforeMs,
+        }),
       },
       ctx,
     );
@@ -138,7 +160,9 @@ export const getScheduleForStop = tool('onebusaway_get_schedule_for_stop', {
     });
     if (result.routes.length === 0) {
       ctx.enrich.notice(
-        `No scheduled departures for stop ${input.stopId}${input.date ? ` on ${input.date}` : ' today'}. Service may not operate on this date.`,
+        result.selection
+          ? 'No departures matched the applied selection in this response.'
+          : `No scheduled departures for stop ${input.stopId}${input.date ? ` on ${input.date}` : ' today'}. Service may not operate on this date.`,
       );
     }
 
@@ -146,24 +170,21 @@ export const getScheduleForStop = tool('onebusaway_get_schedule_for_stop', {
   },
 
   format: (result) => {
-    const serviceDate = new Date(result.serviceDateMs);
-    const serviceDateStr = serviceDate.toLocaleDateString('en-US', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
+    const serviceDateStr = formatEpoch(result.serviceDateMs, result.timezone, 'date');
     const lines: string[] = [
       `## Schedule for ${result.stopName} (${result.stopId})`,
+      `**Timezone:** ${result.timezone}`,
       `**Service date:** ${serviceDateStr} (${result.serviceDateMs})`,
       `**Routes:** ${result.routes.length}`,
     ];
+    if (result.selection) lines.push(renderSelection(result.selection));
     for (const r of result.routes) {
       lines.push(`\n### Route ${r.routeShortName} (${r.routeId})`);
       for (const dir of r.directions) {
         lines.push(`**→ ${dir.tripHeadsign}** (${dir.departures.length} departures)`);
         const times = dir.departures.map(
-          (d) => `${fmtTime(d.scheduledDepartureTime)} (${d.scheduledDepartureTime}) [${d.tripId}]`,
+          (d) =>
+            `${formatEpoch(d.scheduledDepartureTime, result.timezone)} (${d.scheduledDepartureTime}) [${d.tripId}]`,
         );
         lines.push(times.join(', '));
       }

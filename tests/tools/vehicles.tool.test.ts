@@ -40,10 +40,37 @@ const VEHICLE_FIXTURE = {
 };
 
 describe('getVehicles', () => {
+  it('renders east-based orientation without converting its value', () => {
+    const text = (
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [{ ...VEHICLE_FIXTURE, orientation: 90 }],
+        limitExceeded: false,
+      })[0] as { text: string }
+    ).text;
+    expect(text).toContain('**Orientation (0=east, counter-clockwise):** 90°');
+  });
+  it('keeps omission, overflow and empty notices together', async () => {
+    const ctx = createToolContext(getVehicles);
+    mockService.getVehicles.mockResolvedValue({
+      vehicles: [],
+      limitExceeded: true,
+      omittedWithoutPosition: 4,
+      omittedWithoutPositionOnRoute: 2,
+    });
+    const result = await getVehicles.handler(
+      getVehicles.input.parse({ agencyId: '1', routeId: 'route' }),
+      ctx,
+    );
+    expect(result).toMatchObject({ omittedWithoutPosition: 4, omittedWithoutPositionOnRoute: 2 });
+    expect(getEnrichment(ctx).notice).toMatch(/without position.*truncated.*No active/s);
+  });
   it('returns active vehicles with limitExceeded flag', async () => {
     const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({
       vehicles: [VEHICLE_FIXTURE],
+      omittedWithoutPosition: 0,
       limitExceeded: false,
     });
     const input = getVehicles.input.parse({ agencyId: '1' });
@@ -57,6 +84,7 @@ describe('getVehicles', () => {
     const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({
       vehicles: [VEHICLE_FIXTURE],
+      omittedWithoutPosition: 0,
       limitExceeded: false,
     });
     const input = getVehicles.input.parse({ agencyId: '1' });
@@ -71,6 +99,7 @@ describe('getVehicles', () => {
     const ctx = createToolContext(getVehicles);
     mockService.getVehicles.mockResolvedValue({
       vehicles: [VEHICLE_FIXTURE],
+      omittedWithoutPosition: 0,
       limitExceeded: false,
     });
     const input = getVehicles.input.parse({ agencyId: '1', routeId: '1_100259' });
@@ -81,7 +110,11 @@ describe('getVehicles', () => {
 
   it('enriches with notice when no vehicles found', async () => {
     const ctx = createToolContext(getVehicles);
-    mockService.getVehicles.mockResolvedValue({ vehicles: [], limitExceeded: false });
+    mockService.getVehicles.mockResolvedValue({
+      omittedWithoutPosition: 0,
+      vehicles: [],
+      limitExceeded: false,
+    });
     const input = getVehicles.input.parse({ agencyId: '1' });
     await getVehicles.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
@@ -91,7 +124,11 @@ describe('getVehicles', () => {
 
   it('enriches with truncation notice when limitExceeded', async () => {
     const ctx = createToolContext(getVehicles);
-    mockService.getVehicles.mockResolvedValue({ vehicles: [VEHICLE_FIXTURE], limitExceeded: true });
+    mockService.getVehicles.mockResolvedValue({
+      omittedWithoutPosition: 0,
+      vehicles: [VEHICLE_FIXTURE],
+      limitExceeded: true,
+    });
     const input = getVehicles.input.parse({ agencyId: '1' });
     await getVehicles.handler(input, ctx);
     const enrichment = getEnrichment(ctx);
@@ -100,7 +137,11 @@ describe('getVehicles', () => {
 
   it('passes optional routeId to service', async () => {
     const ctx = createToolContext(getVehicles);
-    mockService.getVehicles.mockResolvedValue({ vehicles: [], limitExceeded: false });
+    mockService.getVehicles.mockResolvedValue({
+      omittedWithoutPosition: 0,
+      vehicles: [],
+      limitExceeded: false,
+    });
     const input = getVehicles.input.parse({ agencyId: '1', routeId: '1_100259' });
     await getVehicles.handler(input, ctx);
     expect(mockService.getVehicles).toHaveBeenCalledWith(
@@ -111,7 +152,11 @@ describe('getVehicles', () => {
 
   it('omits empty routeId from service call', async () => {
     const ctx = createToolContext(getVehicles);
-    mockService.getVehicles.mockResolvedValue({ vehicles: [], limitExceeded: false });
+    mockService.getVehicles.mockResolvedValue({
+      omittedWithoutPosition: 0,
+      vehicles: [],
+      limitExceeded: false,
+    });
     const input = getVehicles.input.parse({ agencyId: '1', routeId: '' });
     await getVehicles.handler(input, ctx);
     expect(mockService.getVehicles).toHaveBeenCalledWith(
@@ -128,7 +173,12 @@ describe('getVehicles', () => {
   });
 
   it('formats vehicles with ID, route, and exact position', () => {
-    const output = { vehicles: [VEHICLE_FIXTURE], limitExceeded: false };
+    const output = {
+      timezone: 'UTC',
+      omittedWithoutPosition: 0,
+      vehicles: [VEHICLE_FIXTURE],
+      limitExceeded: false,
+    };
     const blocks = getVehicles.format!(output);
     const text = (blocks[0] as { text: string }).text;
     expect(text).toContain('bus_1234');
@@ -146,7 +196,12 @@ describe('getVehicles', () => {
 
   it('formats late deviation', () => {
     const text = (
-      getVehicles.format!({ vehicles: [VEHICLE_FIXTURE], limitExceeded: false })[0] as {
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [VEHICLE_FIXTURE],
+        limitExceeded: false,
+      })[0] as {
         text: string;
       }
     ).text;
@@ -156,21 +211,38 @@ describe('getVehicles', () => {
   it('formats on-time deviation', () => {
     const onTime = { ...VEHICLE_FIXTURE, scheduleDeviation: 0 };
     const text = (
-      getVehicles.format!({ vehicles: [onTime], limitExceeded: false })[0] as { text: string }
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [onTime],
+        limitExceeded: false,
+      })[0] as { text: string }
     ).text;
     expect(text).toContain('on time');
   });
 
   it('formats empty vehicle list', () => {
     const text = (
-      getVehicles.format!({ vehicles: [], limitExceeded: false })[0] as { text: string }
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [],
+        limitExceeded: false,
+      })[0] as {
+        text: string;
+      }
     ).text;
     expect(text).toMatch(/no active vehicles/i);
   });
 
   it('shows truncation notice in format when limitExceeded', () => {
     const text = (
-      getVehicles.format!({ vehicles: [VEHICLE_FIXTURE], limitExceeded: true })[0] as {
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [VEHICLE_FIXTURE],
+        limitExceeded: true,
+      })[0] as {
         text: string;
       }
     ).text;
@@ -189,7 +261,12 @@ describe('getVehicles', () => {
       nextStop: null,
     };
     const text = (
-      getVehicles.format!({ vehicles: [sparse], limitExceeded: false })[0] as { text: string }
+      getVehicles.format!({
+        timezone: 'UTC',
+        omittedWithoutPosition: 0,
+        vehicles: [sparse],
+        limitExceeded: false,
+      })[0] as { text: string }
     ).text;
     expect(text).toContain('bus_1234');
     // Every absent field is explicit — no dropped line, no "null"/"undefined".
@@ -197,7 +274,7 @@ describe('getVehicles', () => {
     expect(text).toContain('**Route ID:** none');
     expect(text).toContain('**Trip ID:** none');
     expect(text).toContain('**Schedule deviation:** none');
-    expect(text).toContain('**Heading:** none');
+    expect(text).toContain('**Orientation (0=east, counter-clockwise):** none');
     expect(text).toContain('**Next stop:** none');
     expect(text).not.toContain('null');
     expect(text).not.toContain('undefined');

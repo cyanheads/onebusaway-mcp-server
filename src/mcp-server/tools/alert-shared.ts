@@ -6,10 +6,15 @@
  */
 
 import { z } from '@cyanheads/mcp-ts-core';
-import { listOrNone, orNone } from '@/mcp-server/tools/format-helpers.js';
+import { formatEpoch, listOrNone, orNone } from '@/mcp-server/tools/format-helpers.js';
 
 /** Fields of one service alert in full detail. */
 export const alertDetailShape = {
+  timezone: z
+    .string()
+    .describe(
+      'Validated IANA timezone shared by every affected scope, or UTC when unresolved, invalid, absent, or conflicting.',
+    ),
   id: z.string().describe('Situation ID.'),
   summary: z.string().describe('Short summary of the service alert.'),
   description: z.string().nullable().describe('Longer description of the alert, or null.'),
@@ -74,13 +79,14 @@ export const alertDetailShape = {
 type AlertDetail = z.infer<z.ZodObject<typeof alertDetailShape>>;
 
 /** Format Unix milliseconds as a readable date-time string. */
-function fmtMs(ms: number): string {
-  return new Date(ms).toLocaleString();
+function fmtMs(ms: number, timezone: string): string {
+  return formatEpoch(ms, timezone, 'datetime');
 }
 
 /** Markdown lines for one alert, opening with a `heading`-level title (e.g. `##`). */
 export function renderAlertDetail(alert: AlertDetail, heading: string): string[] {
   const lines: string[] = [`${heading} ${alert.summary || 'Service Alert'} (${alert.id})`];
+  lines.push(`**Timezone:** ${alert.timezone}`);
   lines.push(`**Description:** ${orNone(alert.description)}`);
   lines.push(`**Reason:** ${orNone(alert.reason)}`);
   lines.push(`**Severity:** ${orNone(alert.severity)}`);
@@ -90,8 +96,9 @@ export function renderAlertDetail(alert: AlertDetail, heading: string): string[]
   if (alert.activeWindows.length > 0) {
     lines.push('\n**Active windows:**');
     for (const w of alert.activeWindows) {
-      const fromStr = w.from != null ? `${fmtMs(w.from)} (from:${w.from})` : 'open start';
-      const toStr = w.to != null ? `${fmtMs(w.to)} (to:${w.to})` : 'open end';
+      const fromStr =
+        w.from != null ? `${fmtMs(w.from, alert.timezone)} (from:${w.from})` : 'open start';
+      const toStr = w.to != null ? `${fmtMs(w.to, alert.timezone)} (to:${w.to})` : 'open end';
       lines.push(`- ${fromStr} → ${toStr}`);
     }
   }
