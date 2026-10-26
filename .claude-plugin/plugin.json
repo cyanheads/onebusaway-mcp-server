@@ -27,8 +27,52 @@
       "args": ["-y", "@cyanheads/onebusaway-mcp-server"],
       "env": {
         "MCP_TRANSPORT_TYPE": "stdio",
-        "ONEBUSAWAY_API_KEY": "TEST"
+        "ONEBUSAWAY_API_KEY": "${user_config.ONEBUSAWAY_API_KEY}",
+        "ONEBUSAWAY_BASE_URL": "${user_config.ONEBUSAWAY_BASE_URL}",
+        "ONEBUSAWAY_RATE_LIMIT_REQUESTS": "${user_config.ONEBUSAWAY_RATE_LIMIT_REQUESTS}",
+        "ONEBUSAWAY_RATE_LIMIT_WINDOW_MS": "${user_config.ONEBUSAWAY_RATE_LIMIT_WINDOW_MS}",
+        "ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS": "${user_config.ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS}",
+        "MCP_LOG_LEVEL": "${user_config.MCP_LOG_LEVEL}"
       }
+    }
+  },
+  "userConfig": {
+    "ONEBUSAWAY_API_KEY": {
+      "type": "string",
+      "title": "OneBusAway API Key",
+      "description": "API key for the configured OneBusAway instance. Blank uses TEST on Puget Sound.",
+      "sensitive": true,
+      "default": ""
+    },
+    "ONEBUSAWAY_BASE_URL": {
+      "type": "string",
+      "title": "OneBusAway Instance URL",
+      "description": "Base URL of the OneBusAway instance. Blank uses Puget Sound.",
+      "default": ""
+    },
+    "ONEBUSAWAY_RATE_LIMIT_REQUESTS": {
+      "type": "string",
+      "title": "Requests per Rate Window",
+      "description": "Upstream requests allowed per window. Blank uses 20.",
+      "default": ""
+    },
+    "ONEBUSAWAY_RATE_LIMIT_WINDOW_MS": {
+      "type": "string",
+      "title": "Rate Window (milliseconds)",
+      "description": "Sliding rate-window duration. Blank uses 60000 milliseconds.",
+      "default": ""
+    },
+    "ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS": {
+      "type": "string",
+      "title": "Maximum Queue Wait (milliseconds)",
+      "description": "Longest queued wait for an upstream request. Blank uses 45000 milliseconds.",
+      "default": ""
+    },
+    "MCP_LOG_LEVEL": {
+      "type": "string",
+      "title": "Log Level",
+      "description": "Minimum log severity. Blank uses info.",
+      "default": ""
     }
   }
 }

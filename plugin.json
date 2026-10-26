@@ -1,0 +1,28 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "onebusaway-mcp-server",
+  "version": "0.2.1",
+  "description": "Query stops, routes, real-time arrivals, vehicle positions, and schedules from OneBusAway transit APIs via MCP. STDIO or Streamable HTTP.",
+  "author": {
+    "name": "Casey Hand",
+    "email": "casey@caseyjhand.com",
+    "url": "https://caseyjhand.com"
+  },
+  "homepage": "https://github.com/cyanheads/onebusaway-mcp-server#readme",
+  "repository": "https://github.com/cyanheads/onebusaway-mcp-server",
+  "license": "Apache-2.0",
+  "keywords": [
+    "mcp",
+    "mcp-server",
+    "model-context-protocol",
+    "ai",
+    "bun",
+    "transit",
+    "onebusaway",
+    "real-time",
+    "puget-sound",
+    "gtfs",
+    "stdio",
+    "streamable-http"
+  ]
+}

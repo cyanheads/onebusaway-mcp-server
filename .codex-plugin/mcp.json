@@ -3,8 +3,15 @@
     "command": "npx",
     "args": ["-y", "@cyanheads/onebusaway-mcp-server"],
     "env": {
-      "MCP_TRANSPORT_TYPE": "stdio",
-      "ONEBUSAWAY_API_KEY": "TEST"
-    }
+      "MCP_TRANSPORT_TYPE": "stdio"
+    },
+    "env_vars": [
+      "ONEBUSAWAY_API_KEY",
+      "ONEBUSAWAY_BASE_URL",
+      "ONEBUSAWAY_RATE_LIMIT_REQUESTS",
+      "ONEBUSAWAY_RATE_LIMIT_WINDOW_MS",
+      "ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS",
+      "MCP_LOG_LEVEL"
+    ]
   }
 }
