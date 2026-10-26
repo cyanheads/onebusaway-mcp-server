@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.3.0](changelog/0.3.x/0.3.0.md) — 2026-10-26
+
+Select transit schedules and interpret vehicle identity and agency-local times.
+
 ## [0.2.1](changelog/0.2.x/0.2.1.md) — 2026-10-08
 
 Moves to mcp-ts-core 0.13.14: tool arguments sent as numeric or boolean strings, as integers for string fields, or as null optionals are repaired before validation, tool error results carry their request ID, and the Docker image installs production dependencies in a build-platform stage on Bun 1.4.2.

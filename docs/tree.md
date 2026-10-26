@@ -1,6 +1,6 @@
 # onebusaway-mcp-server - Directory Structure
 
-Generated on: 2026-10-09 06:56:21
+Generated on: 2026-10-26 07:17:11
 
 ```text
 onebusaway-mcp-server/
@@ -26,6 +26,7 @@ onebusaway-mcp-server/
 ├── changelog/
 │   ├── 0.1.x/
 │   ├── 0.2.x/
+│   ├── 0.3.x/
 │   └── template.md
 ├── docs/
 │   ├── design.md
@@ -38,6 +39,8 @@ onebusaway-mcp-server/
 │   ├── add-resource/
 │   │   └── SKILL.md
 │   ├── add-service/
+│   │   └── SKILL.md
+│   ├── add-skill/
 │   │   └── SKILL.md
 │   ├── add-test/
 │   │   └── SKILL.md
@@ -136,6 +139,9 @@ onebusaway-mcp-server/
 │   ├── release-github.ts
 │   ├── split-changelog.ts
 │   └── tree.ts
+├── skills/
+│   └── onebusaway-guide/
+│       └── SKILL.md
 ├── src/
 │   ├── config/
 │   │   └── server-config.ts
@@ -166,7 +172,8 @@ onebusaway-mcp-server/
 │   │       │   └── search-stops.tool.ts
 │   │       ├── alert-shared.ts
 │   │       ├── arrivals-shared.ts
-│   │       └── format-helpers.ts
+│   │       ├── format-helpers.ts
+│   │       └── schedule-selection.ts
 │   ├── services/
 │   │   └── onebusaway/
 │   │       ├── onebusaway-service.ts
@@ -182,6 +189,8 @@ onebusaway-mcp-server/
 │   ├── prompts/
 │   ├── resources/
 │   │   └── onebusaway.resource.test.ts
+│   ├── scripts/
+│   │   └── clean-mcpb.test.ts
 │   ├── services/
 │   │   └── onebusaway/
 │   │       ├── onebusaway-service-mapping.test.ts
@@ -219,7 +228,9 @@ onebusaway-mcp-server/
 ├── Dockerfile
 ├── LICENSE
 ├── manifest.json
+├── mcp.json
 ├── package.json
+├── plugin.json
 ├── README.md
 ├── server.json
 ├── tsconfig.build.json
