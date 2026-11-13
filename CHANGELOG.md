@@ -2,6 +2,10 @@
 
 All notable changes to this project. Each entry links to its full per-version file in [changelog/](changelog/).
 
+## [0.4.0](changelog/0.4.x/0.4.0.md) — 2026-11-13 · ⚠️ Breaking · 🛡️ Security
+
+Require raw lookup IDs and report served routes, active trip status, and applied read limits.
+
 ## [0.3.0](changelog/0.3.x/0.3.0.md) — 2026-10-26
 
 Select transit schedules and interpret vehicle identity and agency-local times.
