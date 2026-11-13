@@ -565,7 +565,7 @@ agencies: Array of:
   phone: string | null
   timezone: string
   coverageCenter: { lat: number, lon: number }
-coverageSpan: { latSpan: number, lonSpan: number } — Full latitude and longitude widths in degrees.
+  coverageSpan: { latSpan: number, lonSpan: number } — Full latitude and longitude widths in degrees.
 ```
 
 **Annotations:** `readOnlyHint: true`, `openWorldHint: false`

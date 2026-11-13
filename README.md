@@ -81,7 +81,7 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 ### `onebusaway_search_stops` <sub>tool</sub>
 
 - `query` (stop name fragment) required; `maxCount` defaults to 10 and caps at 3500. For a code from a stop sign, use `onebusaway_find_stops` with the stop's approximate location and code as `query`
-- Same stop shape as `onebusaway_find_stops`; `limitExceeded` means more stops matched than `maxCount`
+- Same stop shape as `onebusaway_find_stops`. `limitExceeded` means OneBusAway reported more matching stops than it returned
 
 ---
 
@@ -102,7 +102,7 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 ### `onebusaway_search_routes` <sub>tool</sub>
 
 - `query` (route name or number) required; `maxCount` defaults to 10 and caps at 6000
-- Returns `shortName`, `longName`, `agencyId`, and GTFS `type`; `limitExceeded` means more routes matched than `maxCount`
+- Returns `shortName`, `longName`, `agencyId`, and GTFS `type`. `limitExceeded` means OneBusAway reported more matching routes than it returned
 - Search can return an empty list for a known route. Use `onebusaway_find_routes` near the service area or `onebusaway_list_routes_for_agency` to check the agency's routes
 
 ---
