@@ -1,6 +1,6 @@
 # onebusaway-mcp-server - Directory Structure
 
-Generated on: 2026-10-26 07:17:11
+Generated on: 2026-11-13 16:22:41
 
 ```text
 onebusaway-mcp-server/
@@ -173,9 +173,12 @@ onebusaway-mcp-server/
 │   │       ├── alert-shared.ts
 │   │       ├── arrivals-shared.ts
 │   │       ├── format-helpers.ts
-│   │       └── schedule-selection.ts
+│   │       ├── read-limits.ts
+│   │       ├── schedule-selection.ts
+│   │       └── stop-shared.ts
 │   ├── services/
 │   │   └── onebusaway/
+│   │       ├── identifier.ts
 │   │       ├── onebusaway-service.ts
 │   │       └── types.ts
 │   └── index.ts
@@ -193,6 +196,7 @@ onebusaway-mcp-server/
 │   │   └── clean-mcpb.test.ts
 │   ├── services/
 │   │   └── onebusaway/
+│   │       ├── identifier.test.ts
 │   │       ├── onebusaway-service-mapping.test.ts
 │   │       ├── onebusaway-service.test.ts
 │   │       └── upstream-error-classification.test.ts

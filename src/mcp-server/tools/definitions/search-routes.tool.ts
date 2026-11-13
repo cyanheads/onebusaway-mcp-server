@@ -6,24 +6,28 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { orNone } from '@/mcp-server/tools/format-helpers.js';
+import {
+  applyReadLimit,
+  readCaps,
+  readLimit,
+  truncatedSearchAdvice,
+} from '@/mcp-server/tools/read-limits.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const searchRoutes = tool('onebusaway_search_routes', {
   title: 'Search Routes by Name or Number',
   description:
-    'Search for routes by name or number. Returns matching routes with IDs. Use to resolve a route short name (e.g. "44") to a route ID for schedule or vehicle lookups with onebusaway_get_vehicles or onebusaway_get_schedule_for_route.',
+    'Search for routes by name or number on instances that support name search. Returns matching routes with IDs. For route discovery use onebusaway_find_routes near the service area or onebusaway_list_routes_for_agency with a known agency ID.',
   annotations: { readOnlyHint: true },
   input: z.object({
     query: z.string().min(1).describe('Route name or number (e.g. "44", "Link", or "RapidRide").'),
-    maxCount: z
-      .number()
-      .int()
-      .positive()
-      .max(100)
-      .default(10)
-      .describe(
-        'Maximum number of results to return. A positive integer, at most 100. Defaults to 10.',
-      ),
+    maxCount: readLimit(
+      z.number().positive(),
+      readCaps.routes,
+      10,
+      `Maximum number of routes to return. Positive integer, default 10, applied cap ${readCaps.routes}.`,
+      true,
+    ),
   }),
   output: z.object({
     routes: z
@@ -52,19 +56,11 @@ export const searchRoutes = tool('onebusaway_search_routes', {
     limitExceeded: z
       .boolean()
       .describe(
-        'True if more routes match than were returned; raise maxCount or refine the query to see all.',
+        'True if OneBusAway reported additional matching routes beyond the returned results.',
       ),
   }),
 
   errors: [
-    {
-      reason: 'endpoint_unavailable',
-      code: JsonRpcErrorCode.NotFound,
-      when: 'The search/route endpoint returns 404 on this OBA instance (e.g. Puget Sound).',
-      recovery:
-        'Use onebusaway_find_routes with a lat/lon near the service area, or onebusaway_list_routes_for_agency with a known agency ID to browse all routes.',
-      thrownBy: 'service',
-    },
     {
       reason: 'rate_limited',
       code: JsonRpcErrorCode.RateLimited,
@@ -86,16 +82,13 @@ export const searchRoutes = tool('onebusaway_search_routes', {
     notice: z
       .string()
       .optional()
-      .describe(
-        'Guidance when no routes matched — e.g. try onebusaway_find_routes with coordinates, or onebusaway_list_routes_for_agency.',
-      ),
+      .describe('Applied input reductions and guidance when results are empty or truncated.'),
   },
 
   async handler(input, ctx) {
-    const result = await getOneBusAwayService().searchRoutes(
-      { query: input.query, maxCount: input.maxCount },
-      ctx,
-    );
+    const notices: string[] = [];
+    const maxCount = applyReadLimit('maxCount', input.maxCount, readCaps.routes, ctx, notices);
+    const result = await getOneBusAwayService().searchRoutes({ query: input.query, maxCount }, ctx);
     ctx.log.info('searchRoutes completed', {
       query: input.query,
       count: result.routes.length,
@@ -104,16 +97,19 @@ export const searchRoutes = tool('onebusaway_search_routes', {
 
     ctx.enrich({ query: input.query, count: result.routes.length });
     if (result.routes.length === 0) {
-      ctx.enrich.notice(
-        `No routes matched "${input.query}". Try onebusaway_find_routes with lat/lon near the service area, or onebusaway_list_routes_for_agency with a known agency ID.`,
+      notices.push(
+        `No routes returned for "${input.query}". Name search may be unavailable on this instance. Try onebusaway_find_routes with coordinates near the service area or onebusaway_list_routes_for_agency with a known agency ID.`,
       );
-    } else if (result.limitExceeded) {
+    }
+    if (result.limitExceeded) {
+      notices.push(truncatedSearchAdvice(maxCount, readCaps.routes));
       ctx.enrich.truncated({
         shown: result.routes.length,
-        cap: input.maxCount,
-        guidance:
-          'Results truncated — more routes match than were returned. Raise maxCount or use a more specific query to see all matches.',
+        cap: maxCount,
+        guidance: notices.join(' '),
       });
+    } else if (notices.length > 0) {
+      ctx.enrich.notice(notices.join(' '));
     }
 
     return { routes: result.routes, limitExceeded: result.limitExceeded };
@@ -124,10 +120,10 @@ export const searchRoutes = tool('onebusaway_search_routes', {
       `**Routes found:** ${result.routes.length} | **Limit exceeded:** ${result.limitExceeded}`,
     ];
     if (result.limitExceeded) {
-      lines.push('> Results truncated — raise maxCount or refine the query to see all matches.');
+      lines.push('> Results truncated.');
     }
     if (result.routes.length === 0) {
-      lines.push('No routes found matching the query.');
+      lines.push('No routes returned.');
       return [{ type: 'text', text: lines.join('\n') }];
     }
     for (const r of result.routes) {

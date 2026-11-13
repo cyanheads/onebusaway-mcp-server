@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { coords, EMPTY, formatEpoch, orNone } from '@/mcp-server/tools/format-helpers.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const getVehicles = tool('onebusaway_get_vehicles', {
@@ -14,12 +15,9 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
     'Real-time positions of active vehicles for an agency. Optionally filter to a single route (client-side). Returns GPS coordinates, counter-clockwise orientation from east, schedule deviation, and current trip. Reports agency records omitted for missing position coordinates. Use agencyId values from onebusaway_list_agencies.',
   annotations: { readOnlyHint: true },
   input: z.object({
-    agencyId: z
-      .string()
-      .min(1)
-      .describe(
-        'Agency ID (e.g. "1" for Metro Transit, "40" for Sound Transit). Use onebusaway_list_agencies to discover IDs.',
-      ),
+    agencyId: oneBusAwayIdSchema.describe(
+      'Raw agency ID for the vehicle records to query. Use the agency namespace from a known vehicle ID, or browse IDs with onebusaway_list_agencies. The vehicle agency can differ from the route agency.',
+    ),
     routeId: z
       .string()
       .optional()
@@ -157,7 +155,7 @@ export const getVehicles = tool('onebusaway_get_vehicles', {
     if (result.vehicles.length === 0) {
       notices.push(
         input.routeId
-          ? `No active vehicles found on route ${input.routeId}. The route may not be currently running or may not have real-time data.`
+          ? `No active vehicles returned for route ${input.routeId} within vehicle agency ${input.agencyId}.`
           : `No active vehicles found for agency ${input.agencyId}. Vehicles may not be running at this time.`,
       );
     }

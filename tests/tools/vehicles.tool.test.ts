@@ -3,10 +3,10 @@
  * @module tests/tools/vehicles.tool.test
  */
 
-import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getVehicles } from '@/mcp-server/tools/definitions/get-vehicles.tool.js';
-import { expectContentParity } from './format-parity.helper.js';
+import { contentText, expectContentParity } from './format-parity.helper.js';
 import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
@@ -40,6 +40,25 @@ const VEHICLE_FIXTURE = {
 };
 
 describe('getVehicles', () => {
+  it('scopes empty route guidance to the requested vehicle agency', async () => {
+    mockService.getVehicles.mockResolvedValue({
+      timezone: 'UTC',
+      vehicles: [],
+      limitExceeded: false,
+      omittedWithoutPosition: 0,
+    });
+    const result = await runToolContract(getVehicles, { agencyId: '1', routeId: '40_100479' });
+    expect(mockService.getVehicles).toHaveBeenCalledWith(
+      { agencyId: '1', routeId: '40_100479' },
+      expect.anything(),
+    );
+    expect(result.structuredContent).toMatchObject({
+      vehicles: [],
+      notice: 'No active vehicles returned for route 40_100479 within vehicle agency 1.',
+    });
+    expect(contentText(result.content)).toContain('within vehicle agency 1');
+    expect(contentText(result.content)).not.toMatch(/route may not be currently running/);
+  });
   it('renders east-based orientation without converting its value', () => {
     const text = (
       getVehicles.format!({

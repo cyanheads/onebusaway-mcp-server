@@ -253,17 +253,8 @@ describe('getVehicles error contracts', () => {
 // ---- searchRoutes error contracts ----
 
 describe('searchRoutes error contracts', () => {
-  it('data.reason is "endpoint_unavailable" on 404 response', async () => {
-    const ctx = createToolContext(searchRoutes);
-    mockService.searchRoutes.mockRejectedValue(
-      new McpError(-32001, 'endpoint not found.', {
-        reason: 'endpoint_unavailable',
-      }),
-    );
-    const input = searchRoutes.input.parse({ query: '44' });
-    await expect(searchRoutes.handler(input, ctx)).rejects.toMatchObject({
-      data: { reason: 'endpoint_unavailable' },
-    });
+  it('declares rate-limit recovery only', () => {
+    expect(searchRoutes.errors?.map((error) => error.reason)).toEqual(['rate_limited']);
   });
 });
 

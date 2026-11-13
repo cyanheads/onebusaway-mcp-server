@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { orNone } from '@/mcp-server/tools/format-helpers.js';
+import { applyReadLimit, readCaps, readLimit } from '@/mcp-server/tools/read-limits.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const findRoutes = tool('onebusaway_find_routes', {
@@ -16,14 +17,12 @@ export const findRoutes = tool('onebusaway_find_routes', {
   input: z.object({
     lat: z.number().min(-90).max(90).describe('Latitude of the search center, in [-90, 90].'),
     lon: z.number().min(-180).max(180).describe('Longitude of the search center, in [-180, 180].'),
-    radius: z
-      .number()
-      .positive()
-      .max(1600)
-      .default(500)
-      .describe(
-        'Search radius in meters. Must be positive; capped at 1600m. Defaults to 500m. Ignored when latSpan and lonSpan are both set.',
-      ),
+    radius: readLimit(
+      z.number().positive(),
+      readCaps.radius,
+      500,
+      `Search radius in meters. Must be positive. Defaults to 500m, applied cap ${readCaps.radius}m. Ignored when latSpan and lonSpan are both set.`,
+    ),
     latSpan: z
       .number()
       .positive()
@@ -98,19 +97,20 @@ export const findRoutes = tool('onebusaway_find_routes', {
     notice: z
       .string()
       .optional()
-      .describe('Guidance when no routes matched — e.g. try a larger radius or different query.'),
+      .describe('Applied input reductions and guidance when results are empty or truncated.'),
   },
 
   async handler(input, ctx) {
-    // latSpan/lonSpan define a bounding box as an alternative to radius; when both are
-    // set, send the box and omit radius so it (not the default radius) drives the search.
+    const notices: string[] = [];
+    const area =
+      input.latSpan != null && input.lonSpan != null
+        ? { latSpan: input.latSpan, lonSpan: input.lonSpan }
+        : { radius: applyReadLimit('radius', input.radius, readCaps.radius, ctx, notices) };
     const result = await getOneBusAwayService().findRoutes(
       {
         lat: input.lat,
         lon: input.lon,
-        ...(input.latSpan != null && input.lonSpan != null
-          ? { latSpan: input.latSpan, lonSpan: input.lonSpan }
-          : { radius: input.radius }),
+        ...area,
         ...(input.query && { query: input.query }),
       },
       ctx,
@@ -122,16 +122,21 @@ export const findRoutes = tool('onebusaway_find_routes', {
 
     ctx.enrich({ count: result.routes.length, ...(input.query && { query: input.query }) });
     if (result.routes.length === 0) {
-      ctx.enrich.notice(
+      const advice =
+        'latSpan' in area
+          ? 'Try a different bounding box.'
+          : area.radius < readCaps.radius
+            ? 'Try a larger radius or a different location.'
+            : 'Try a different location.';
+      notices.push(
         input.query
-          ? `No routes matching "${input.query}" found nearby. Try a larger radius or a different query.`
-          : 'No routes found nearby. Try increasing the radius.',
+          ? `No routes returned for "${input.query}". ${advice} You can also try a different query.`
+          : `No routes found nearby. ${advice}`,
       );
     } else if (result.limitExceeded) {
-      ctx.enrich.notice(
-        'Results truncated — more routes exist nearby. Narrow the radius (or set latSpan/lonSpan) to see all routes.',
-      );
+      notices.push('Results truncated — narrow the search area to see more routes.');
     }
+    if (notices.length > 0) ctx.enrich.notice(notices.join(' '));
 
     return { routes: result.routes, limitExceeded: result.limitExceeded };
   },
@@ -141,7 +146,7 @@ export const findRoutes = tool('onebusaway_find_routes', {
       `**Routes found:** ${result.routes.length} | **Limit exceeded:** ${result.limitExceeded}`,
     ];
     if (result.limitExceeded) {
-      lines.push('> Results truncated — narrow the radius to see all routes.');
+      lines.push('> Results truncated.');
     }
     if (result.routes.length === 0) {
       lines.push('No routes found near this location.');

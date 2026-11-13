@@ -100,7 +100,7 @@ describe('onebusaway_get_stop_context', () => {
     expect(h.methods.get).not.toHaveBeenCalled();
     expect(h.methods.stop.retrieve).not.toHaveBeenCalled();
 
-    // Equal to onebusaway_get_stop for 1_570, minus routeIds.
+    // Stop context excludes both served-route fields.
     expect(structured.stop).toEqual({
       id: '1_570',
       code: '570',
@@ -165,9 +165,8 @@ describe('onebusaway_get_stop_context', () => {
 
   it('carries every structured value into content[]', async () => {
     const payload = arrivalsFixture();
-    // Positive stopsAway renders verbatim; 0 and negatives render as "At stop" / "Arrived".
     payload.data.entry.arrivalsAndDepartures.forEach((a, i) => {
-      a.numberOfStopsAway = i + 1;
+      a.numberOfStopsAway = i - 1;
     });
     payload.data.entry.arrivalsAndDepartures[0]!.situationIds = ['1_94915'];
     const { result, structured, text } = await run(payload);
@@ -176,6 +175,9 @@ describe('onebusaway_get_stop_context', () => {
     expect(text).toContain('## Arrivals (3)');
     expect(text).toContain('## Service Alerts (3)');
     expect(text).toContain('**Window:** −5 min / +35 min');
+    expect(text).toContain('**Block stop sequence offset:** -1');
+    expect(text).toContain('**Block stop sequence offset:** 0 (may be unavailable)');
+    expect(text).toContain('**Block stop sequence offset:** 1');
   });
 
   it('echoes a non-default window and forwards it upstream', async () => {

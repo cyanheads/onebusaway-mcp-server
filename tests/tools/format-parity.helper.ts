@@ -28,9 +28,7 @@ export function contentText(content: readonly ContentBlock[]): string {
  *
  * Null, undefined, empty strings, and empty arrays are skipped by design — explicit
  * null/empty rendering ("none") is asserted by the targeted cases in each test file,
- * not here. Callers therefore choose fixtures whose values all render verbatim; avoid
- * values a formatter fully rewrites (e.g. getArrivals renders `stopsAway` 0 as
- * "At stop", so use a positive value in parity fixtures).
+ * not here. Callers choose fixtures whose material values all render verbatim.
  */
 export function expectContentParity(content: readonly ContentBlock[], structured: unknown): void {
   const text = contentText(content);

@@ -12,6 +12,7 @@ import {
   stopSelectionSchema,
   stopSelectorFields,
 } from '@/mcp-server/tools/schedule-selection.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const getScheduleForStop = tool('onebusaway_get_schedule_for_stop', {
@@ -22,12 +23,9 @@ export const getScheduleForStop = tool('onebusaway_get_schedule_for_stop', {
   input: z
     .object({
       ...stopSelectorFields,
-      stopId: z
-        .string()
-        .min(1)
-        .describe(
-          'Agency-prefixed stop ID (e.g. "1_75403"). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
-        ),
+      stopId: oneBusAwayIdSchema.describe(
+        'Agency-prefixed stop ID (e.g. "1_75403"). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
+      ),
       date: z
         .union([
           z.literal(''),

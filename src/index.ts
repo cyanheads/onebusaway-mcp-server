@@ -26,6 +26,7 @@ import { listAgencies } from './mcp-server/tools/definitions/list-agencies.tool.
 import { listRoutesForAgency } from './mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from './mcp-server/tools/definitions/search-routes.tool.js';
 import { searchStops } from './mcp-server/tools/definitions/search-stops.tool.js';
+import { enforceReadLimits } from './mcp-server/tools/read-limits.js';
 import {
   disposeOneBusAwayService,
   initOneBusAwayService,
@@ -35,6 +36,7 @@ await createApp({
   name: 'onebusaway-mcp-server',
   title: 'onebusaway-mcp-server',
   sessionMode: 'stateless',
+  decodeResourceParams: true,
   // Public hosted catalog — serve full inventory without auth gate.
   landing: { requireAuth: false },
   tools: [
@@ -59,9 +61,22 @@ await createApp({
   prompts: [],
   skills: 'skills',
   instructions:
-    'OneBusAway provides stops, routes, arrivals, vehicles, alerts, and timetables for the configured instance (Puget Sound by default), without origin-to-destination trip planning. Stop and route IDs are agency-prefixed and instance-specific: resolve them through discovery before arrivals, schedule, or vehicle calls; do not construct IDs from displayed codes or route numbers. Use stop context for arrivals plus available alert detail, and follow notices for unresolved references. Carry arrival trip IDs into trip lookup and a non-null block ID into block lookup. Name search availability varies by instance; use geographic discovery or agency route listings when it fails. Requests share an upstream API-key budget; honor rate-limit retry guidance. See onebusaway-guide for selection and interpretation gates.',
+    'OneBusAway provides stops, routes, arrivals, vehicles, alerts, and timetables for the configured instance (Puget Sound by default). Pass instance-specific raw IDs exactly as discovery tools return them. Use stop context for arrivals plus available alert detail, and follow notices for unresolved references. Carry arrival trip IDs into trip lookup and a non-null block ID into block lookup. Use geographic discovery or agency route listings when name search returns no results or fails. For stop codes, use onebusaway_find_stops with nearby coordinates and the code as query. Vehicle queries use the vehicle ID’s agency namespace, which can differ from the route agency. Requests share an upstream API-key budget; honor rate-limit retry guidance. See onebusaway-guide for selection and interpretation.',
   setup() {
-    initOneBusAwayService(getServerConfig());
+    const config = getServerConfig();
+    if (!config.clampLimits) {
+      for (const definition of [
+        findStops,
+        findRoutes,
+        searchStops,
+        searchRoutes,
+        getArrivals,
+        getStopContext,
+      ]) {
+        enforceReadLimits(definition);
+      }
+    }
+    initOneBusAwayService(config);
   },
   teardown() {
     disposeOneBusAwayService();

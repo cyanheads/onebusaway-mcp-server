@@ -6,16 +6,15 @@
  * @module mcp-server/tools/arrivals-shared
  */
 
-import { z } from '@cyanheads/mcp-ts-core';
+import { type Context, z } from '@cyanheads/mcp-ts-core';
 import {
   coordsOrNone,
   formatEpoch,
   listOrNone,
   orNone,
 } from '@/mcp-server/tools/format-helpers.js';
-
-/** Upper bound of `minutesAfter` — the widest real-time window one call can request. */
-const MINUTES_AFTER_MAX = 240;
+import { applyReadLimit, readCaps, readLimit } from '@/mcp-server/tools/read-limits.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 
 /**
  * Stop and time window. The bounds keep the window inside what OneBusAway computes
@@ -23,31 +22,49 @@ const MINUTES_AFTER_MAX = 240;
  * the window and large values overflow) and the response a readable size.
  */
 export const arrivalsInput = z.object({
-  stopId: z
-    .string()
-    .min(1)
-    .describe(
-      'Agency-prefixed stop ID (e.g. "1_75403" for Metro Transit stop 75403). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
-    ),
-  minutesBefore: z
-    .number()
-    .int()
-    .min(0)
-    .max(60)
-    .default(5)
-    .describe(
-      'Include arrivals that departed up to this many minutes ago — an integer from 0 to 60. Defaults to 5.',
-    ),
-  minutesAfter: z
-    .number()
-    .int()
-    .min(0)
-    .max(MINUTES_AFTER_MAX)
-    .default(35)
-    .describe(
-      `Include arrivals expected within the next N minutes — an integer from 0 to ${MINUTES_AFTER_MAX}. Defaults to 35. For a longer horizon, use onebusaway_get_schedule_for_stop.`,
-    ),
+  stopId: oneBusAwayIdSchema.describe(
+    'Agency-prefixed stop ID (e.g. "1_75403" for Metro Transit stop 75403). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
+  ),
+  minutesBefore: readLimit(
+    z.number().min(0),
+    readCaps.minutesBefore,
+    5,
+    `Include arrivals that departed up to this many minutes ago. Nonnegative integer, default 5, applied cap ${readCaps.minutesBefore}.`,
+    true,
+  ),
+  minutesAfter: readLimit(
+    z.number().min(0),
+    readCaps.minutesAfter,
+    35,
+    `Include arrivals expected within the next N minutes. Nonnegative integer, default 35, applied cap ${readCaps.minutesAfter}. For a longer horizon, use onebusaway_get_schedule_for_stop.`,
+    true,
+  ),
 });
+
+/** Apply both limits before dispatch and before reporting the queried window. */
+export function applyArrivalWindow(
+  input: z.output<typeof arrivalsInput>,
+  ctx: Pick<Context, 'log'>,
+  notices: string[],
+) {
+  return {
+    stopId: input.stopId,
+    minutesBefore: applyReadLimit(
+      'minutesBefore',
+      input.minutesBefore,
+      readCaps.minutesBefore,
+      ctx,
+      notices,
+    ),
+    minutesAfter: applyReadLimit(
+      'minutesAfter',
+      input.minutesAfter,
+      readCaps.minutesAfter,
+      ctx,
+      notices,
+    ),
+  };
+}
 
 /**
  * Next step for an empty arrivals window. Names `minutesAfter` only while the call
@@ -55,9 +72,9 @@ export const arrivalsInput = z.object({
  */
 export function emptyWindowAdvice(minutesAfter: number): string {
   const schedule = 'onebusaway_get_schedule_for_stop for scheduled service on this date';
-  return minutesAfter < MINUTES_AFTER_MAX
-    ? `Try increasing minutesAfter (up to ${MINUTES_AFTER_MAX}), or check ${schedule}.`
-    : `${MINUTES_AFTER_MAX} minutes is the widest real-time window — check ${schedule}.`;
+  return minutesAfter < readCaps.minutesAfter
+    ? `Try increasing minutesAfter (up to ${readCaps.minutesAfter}), or check ${schedule}.`
+    : `${readCaps.minutesAfter} minutes is the widest real-time window — check ${schedule}.`;
 }
 
 /** One arrival or departure at the queried stop. */
@@ -76,7 +93,7 @@ export const arrivalSchema = z
     scheduleDeviation: z
       .number()
       .describe(
-        'Seconds late (positive) or early (negative). Only meaningful when predicted=true.',
+        'Current vehicle schedule deviation in seconds, late if positive and early if negative. Interpret when predicted=true. Compare predictedArrivalTime with scheduledArrivalTime for deviation at the queried stop.',
       ),
     vehicleId: z.string().nullable().describe('Vehicle ID if known, or null.'),
     vehiclePosition: z
@@ -89,7 +106,9 @@ export const arrivalSchema = z
     stopsAway: z
       .number()
       .nullable()
-      .describe('Number of stops until this stop, or null if unknown.'),
+      .describe(
+        'Queried stop block sequence minus the next stop block sequence, or null when absent. Upstream can also report 0 when unavailable.',
+      ),
     tripId: z.string().describe('Trip ID for follow-up onebusaway_get_trip calls.'),
     routeId: z.string().describe('Route ID for follow-up route calls.'),
     situationIds: z
@@ -116,29 +135,30 @@ function fmtDeviation(seconds: number): string {
 /** Markdown lines for one arrival, opening with its `### Route …` heading. */
 export function renderArrival(a: Arrival, timezone: string): string[] {
   const arrivalTime = a.predictedArrivalTime ?? a.scheduledArrivalTime;
-  const devStr = a.predicted ? ` (${fmtDeviation(a.scheduleDeviation)})` : ' (scheduled)';
   const lines = [
     `\n### Route ${a.routeShortName} → ${a.tripHeadsign}`,
-    `**Arrives:** ${fmtTime(arrivalTime, timezone)}${devStr}`,
+    `**Arrives:** ${fmtTime(arrivalTime, timezone)}${a.predictedArrivalTime == null ? ' (scheduled)' : ''}`,
     `**Scheduled:** ${fmtTime(a.scheduledArrivalTime, timezone)} (${a.scheduledArrivalTime})`,
   ];
-  if (a.predictedArrivalTime != null) {
+  if (a.predictedArrivalTime == null) {
+    lines.push('**Predicted:** none');
+  } else {
+    const seconds = (a.predictedArrivalTime - a.scheduledArrivalTime) / 1000;
     lines.push(
       `**Predicted:** ${fmtTime(a.predictedArrivalTime, timezone)} (${a.predictedArrivalTime})`,
+      `**Predicted arrival deviation:** ${fmtDeviation(seconds)} (${seconds}s)`,
     );
   }
   lines.push(`**Trip ID:** ${a.tripId} | **Route ID:** ${a.routeId}`);
-  if (a.stopsAway != null && a.stopsAway >= 0) {
-    lines.push(`**Stops away:** ${a.stopsAway === 0 ? 'At stop' : a.stopsAway}`);
-  } else if (a.stopsAway != null && a.stopsAway < 0) {
-    lines.push(`**Stops away:** Arrived`);
-  }
+  lines.push(
+    `**Block stop sequence offset:** ${orNone(a.stopsAway)}${a.stopsAway === 0 ? ' (may be unavailable)' : ''}`,
+  );
   lines.push(`**Vehicle:** ${orNone(a.vehicleId)}`);
   lines.push(`**Vehicle position:** ${coordsOrNone(a.vehiclePosition)}`);
   lines.push(`**Alerts:** ${listOrNone(a.situationIds)}`);
   lines.push(`**GPS-tracked:** ${a.predicted}`);
   lines.push(
-    `**Schedule deviation:** ${fmtDeviation(a.scheduleDeviation)} (${a.scheduleDeviation}s)`,
+    `**Current vehicle deviation:** ${fmtDeviation(a.scheduleDeviation)} (${a.scheduleDeviation}s)`,
   );
   return lines;
 }

@@ -3,9 +3,10 @@
  * @module tests/tools/trip.tool.test
  */
 
+import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getTrip } from '@/mcp-server/tools/definitions/get-trip.tool.js';
-import { expectContentParity } from './format-parity.helper.js';
+import { contentText, expectContentParity } from './format-parity.helper.js';
 import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
@@ -36,6 +37,8 @@ const TRIP_RESULT = {
   tripHeadsign: 'Downtown Seattle',
   blockId: '1_block_42',
   status: {
+    activeTripId: 'trip_abc',
+    blockTripSequence: 0,
     phase: 'in_progress',
     predicted: true,
     // High-precision coordinates so a toFixed(5) regression would visibly round them.
@@ -67,6 +70,50 @@ const TRIP_RESULT = {
 };
 
 describe('getTrip', () => {
+  it('keeps the requested schedule and attributes mismatched vehicle status', async () => {
+    mockService.getTrip.mockResolvedValue({
+      ...TRIP_RESULT,
+      status: { ...TRIP_RESULT.status, activeTripId: 'trip_other', blockTripSequence: 2 },
+    });
+    const result = await runToolContract(getTrip, { tripId: 'trip_abc' } as never);
+    expect(result.structuredContent).toMatchObject({
+      tripId: 'trip_abc',
+      schedule: TRIP_RESULT.schedule,
+      status: { activeTripId: 'trip_other', blockTripSequence: 2 },
+      notice: 'Vehicle status describes active trip trip_other. The requested trip is trip_abc.',
+    });
+    const text = contentText(result.content);
+    expect(text).toContain('## Stop Sequence for trip_abc');
+    expect(text).toContain('Vehicle status describes active trip trip_other.');
+    expect(text).not.toContain('not started');
+  });
+
+  it.each([
+    ['trip_abc', 0, '**Active trip ID:** trip_abc', '**Block trip sequence:** 0'],
+    [null, null, '**Active trip ID:** none', '**Block trip sequence:** none'],
+  ])(
+    'keeps status identity %s when schedule is omitted',
+    async (activeTripId, blockTripSequence, trip, sequence) => {
+      mockService.getTrip.mockResolvedValue({
+        ...TRIP_RESULT,
+        status: { ...TRIP_RESULT.status, activeTripId, blockTripSequence },
+        schedule: null,
+      });
+      const result = await runToolContract(getTrip, { tripId: 'trip_abc', includeSchedule: false });
+      expect(mockService.getTrip).toHaveBeenCalledWith(
+        { tripId: 'trip_abc', includeSchedule: false },
+        expect.anything(),
+      );
+      expect(result.structuredContent).toMatchObject({
+        schedule: null,
+        status: { activeTripId, blockTripSequence },
+      });
+      const text = contentText(result.content);
+      expect(text).toContain(trip);
+      expect(text).toContain(sequence);
+      expect(text).toContain('**Schedule:** none');
+    },
+  );
   it('returns trip status from service', async () => {
     const ctx = createToolContext(getTrip);
     mockService.getTrip.mockResolvedValue(TRIP_RESULT);
@@ -101,6 +148,8 @@ describe('getTrip', () => {
     expect(text).toContain('trip_abc');
     expect(text).toContain('44');
     expect(text).toContain('in_progress');
+    expect(text).toContain('**Active trip ID:** trip_abc');
+    expect(text).toContain('**Block trip sequence:** 0');
     expect(text).toContain('60');
   });
 

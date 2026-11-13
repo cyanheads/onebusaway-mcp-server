@@ -8,6 +8,7 @@ import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { alertDetailShape, renderAlertDetail } from '@/mcp-server/tools/alert-shared.js';
 import {
+  applyArrivalWindow,
   arrivalSchema,
   arrivalsInput,
   emptyWindowAdvice,
@@ -20,7 +21,7 @@ import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.j
 export const getStopContext = tool('onebusaway_get_stop_context', {
   title: 'Get Stop Context',
   description:
-    'Everything happening at a stop in one call: the stop\'s details, its real-time arrivals, and full detail for every service alert on the stop or on any arrival in the window. Returns what onebusaway_get_stop, onebusaway_get_arrivals, and one onebusaway_get_alert call per alert would, from a single upstream request — arrivals in the onebusaway_get_arrivals shape, alerts in the onebusaway_get_alert shape. The stop omits its served-route list; use onebusaway_get_stop for routeIds. Stop IDs use agency-prefixed format: {agencyId}_{localId} (e.g. "1_75403").',
+    'Get stop details, real-time arrivals, and available details for alerts on the stop or its arrivals from one upstream response. Use onebusaway_get_stop for served-route IDs and available route summaries. Pass a raw agency-prefixed stop ID (e.g. "1_75403").',
   annotations: { readOnlyHint: true },
   input: arrivalsInput,
   output: z.object({
@@ -43,7 +44,7 @@ export const getStopContext = tool('onebusaway_get_stop_context', {
       })
       .nullable()
       .describe(
-        'The queried stop, without its served-route list (use onebusaway_get_stop for routeIds). Null when the upstream response omitted the stop.',
+        'The queried stop details. Use onebusaway_get_stop for served routes. Null when the upstream response omitted the stop.',
       ),
     currentTime: z
       .number()
@@ -89,7 +90,7 @@ export const getStopContext = tool('onebusaway_get_stop_context', {
       .string()
       .optional()
       .describe(
-        'What the response is missing and where to get it — no arrivals in the window, stop details absent, or referenced alerts absent.',
+        'Applied input reductions and guidance when arrivals, stop details, or referenced alerts are missing.',
       ),
   },
 
@@ -100,12 +101,10 @@ export const getStopContext = tool('onebusaway_get_stop_context', {
   },
 
   async handler(input, ctx) {
+    const notices: string[] = [];
+    const window = applyArrivalWindow(input, ctx, notices);
     const { unresolvedSituationIds, ...result } = await getOneBusAwayService().getStopContext(
-      {
-        stopId: input.stopId,
-        minutesBefore: input.minutesBefore,
-        minutesAfter: input.minutesAfter,
-      },
+      window,
       ctx,
     );
     ctx.log.info('getStopContext completed', {
@@ -116,9 +115,8 @@ export const getStopContext = tool('onebusaway_get_stop_context', {
 
     ctx.enrich({
       queriedStop: input.stopId,
-      windowMinutes: { before: input.minutesBefore, after: input.minutesAfter },
+      windowMinutes: { before: window.minutesBefore, after: window.minutesAfter },
     });
-    const notices: string[] = [];
     if (!result.stop) {
       notices.push(
         `The response carried no details for stop ${input.stopId}, so stop is null — fetch them with onebusaway_get_stop.`,
@@ -131,7 +129,7 @@ export const getStopContext = tool('onebusaway_get_stop_context', {
     }
     if (result.arrivals.length === 0) {
       notices.push(
-        `No arrivals at ${input.stopId} between ${input.minutesBefore} minutes ago and ${input.minutesAfter} minutes from now. ${emptyWindowAdvice(input.minutesAfter)}`,
+        `No arrivals at ${input.stopId} between ${window.minutesBefore} minutes ago and ${window.minutesAfter} minutes from now. ${emptyWindowAdvice(window.minutesAfter)}`,
       );
     }
     if (notices.length > 0) ctx.enrich.notice(notices.join(' '));

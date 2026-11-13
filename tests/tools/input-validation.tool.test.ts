@@ -6,6 +6,7 @@
 import { z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
+import { createWorkerHandler } from '@cyanheads/mcp-ts-core/worker';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
@@ -23,6 +24,7 @@ import { listAgencies } from '@/mcp-server/tools/definitions/list-agencies.tool.
 import { listRoutesForAgency } from '@/mcp-server/tools/definitions/list-routes-for-agency.tool.js';
 import { searchRoutes } from '@/mcp-server/tools/definitions/search-routes.tool.js';
 import { searchStops } from '@/mcp-server/tools/definitions/search-stops.tool.js';
+import { enforceReadLimits } from '@/mcp-server/tools/read-limits.js';
 
 /** Service stub — a schema rejection must never reach it. */
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
@@ -37,6 +39,7 @@ const mockService = {
   getTrip: vi.fn(),
   getScheduleForStop: vi.fn(),
   getScheduleForRoute: vi.fn(),
+  searchRoutes: vi.fn(),
 };
 
 beforeEach(() => {
@@ -170,8 +173,8 @@ describe('findStops input validation', () => {
     expect(() => findStops.input.parse({ lat: 47.6, lon: -122.3, radius: 0 })).toThrow();
   });
 
-  it('rejects radius above the 1600m cap', () => {
-    expect(() => findStops.input.parse({ lat: 47.6, lon: -122.3, radius: 1601 })).toThrow();
+  it('accepts an over-cap radius for clamping', () => {
+    expect(findStops.input.parse({ lat: 47.6, lon: -122.3, radius: 1601 }).radius).toBe(1601);
   });
 
   it('accepts boundary lat/lon and radius', () => {
@@ -214,8 +217,8 @@ describe('searchStops input validation', () => {
     expect(() => searchStops.input.parse({ query: 'x', maxCount: 2.5 })).toThrow();
   });
 
-  it('rejects maxCount above the cap of 100', () => {
-    expect(() => searchStops.input.parse({ query: 'x', maxCount: 101 })).toThrow();
+  it('accepts an over-cap maxCount for clamping', () => {
+    expect(searchStops.input.parse({ query: 'x', maxCount: 3501 }).maxCount).toBe(3501);
   });
 
   it('accepts boundary maxCount values', () => {
@@ -285,8 +288,8 @@ describe('findRoutes input validation', () => {
     expect(() => findRoutes.input.parse({ lat: 47.6, lon: -122.3, radius: 0 })).toThrow();
   });
 
-  it('rejects radius above the 1600m cap', () => {
-    expect(() => findRoutes.input.parse({ lat: 47.6, lon: -122.3, radius: 1601 })).toThrow();
+  it('accepts an over-cap radius for clamping', () => {
+    expect(findRoutes.input.parse({ lat: 47.6, lon: -122.3, radius: 1601 }).radius).toBe(1601);
   });
 
   it('rejects non-positive latSpan or lonSpan', () => {
@@ -328,8 +331,8 @@ describe('searchRoutes input validation', () => {
     expect(() => searchRoutes.input.parse({ query: 'x', maxCount: 2.5 })).toThrow();
   });
 
-  it('rejects maxCount above the cap of 100', () => {
-    expect(() => searchRoutes.input.parse({ query: 'x', maxCount: 101 })).toThrow();
+  it('accepts an over-cap maxCount for clamping', () => {
+    expect(searchRoutes.input.parse({ query: 'x', maxCount: 6001 }).maxCount).toBe(6001);
   });
 
   it('accepts boundary maxCount values', () => {
@@ -421,11 +424,8 @@ describe.each([
   it.each([
     { minutesBefore: -1 },
     { minutesBefore: 2.5 },
-    { minutesBefore: 61 },
     { minutesAfter: -1 },
     { minutesAfter: 2.5 },
-    { minutesAfter: 241 },
-    { minutesAfter: 40000 },
   ])('rejects %o at the schema, before any service call', async (window) => {
     await expectSchemaRejection(definition, { stopId: '1_570', ...window });
   });
@@ -443,10 +443,12 @@ describe.each([
   it('advertises integer bounds in the JSON Schema and states them in the descriptions', () => {
     const before = wireProperty(definition.input, 'minutesBefore');
     const after = wireProperty(definition.input, 'minutesAfter');
-    expect(before).toMatchObject({ type: 'integer', minimum: 0, maximum: 60, default: 5 });
-    expect(after).toMatchObject({ type: 'integer', minimum: 0, maximum: 240, default: 35 });
-    expect(before.description).toMatch(/0.*60/);
-    expect(after.description).toMatch(/0.*240/);
+    expect(before).toMatchObject({ type: 'integer', minimum: 0, default: 5 });
+    expect(after).toMatchObject({ type: 'integer', minimum: 0, default: 35 });
+    expect(before).not.toHaveProperty('maximum');
+    expect(after).not.toHaveProperty('maximum');
+    expect(before.description).toMatch(/applied cap 60/);
+    expect(after.description).toMatch(/applied cap 240/);
     expect(after.description).toContain('onebusaway_get_schedule_for_stop');
   });
 });
@@ -454,6 +456,91 @@ describe.each([
 it('getStopContext advertises the same input schema as getArrivals (#24)', () => {
   expect(z.toJSONSchema(getStopContext.input)).toEqual(z.toJSONSchema(getArrivals.input));
 });
+
+it.each([
+  { definition: findStops, field: 'radius', cap: 1600, args: { lat: 47.6, lon: -122.3 } },
+  { definition: findRoutes, field: 'radius', cap: 1600, args: { lat: 47.6, lon: -122.3 } },
+  { definition: searchStops, field: 'maxCount', cap: 3500, args: { query: 'University' } },
+  { definition: searchRoutes, field: 'maxCount', cap: 6000, args: { query: '44' } },
+  { definition: getArrivals, field: 'minutesBefore', cap: 60, args: { stopId: '1_570' } },
+  { definition: getStopContext, field: 'minutesAfter', cap: 240, args: { stopId: '1_570' } },
+])(
+  'strict mode advertises $field maximum $cap and rejects above it',
+  async ({ definition, field, cap, args }) => {
+    const strict = { ...definition };
+    enforceReadLimits(strict);
+    expect(wireProperty(strict.input, field)).toHaveProperty('maximum', cap);
+    expect(strict.input.safeParse({ ...args, [field]: cap }).success).toBe(true);
+    await expectSchemaRejection(strict as Parameters<typeof runToolContract>[0], {
+      ...args,
+      [field]: cap + 1,
+    });
+  },
+);
+
+it.each([false, true])(
+  'registers the read cap consistently on the wire (strict: %s)',
+  async (strict) => {
+    const definition = { ...searchRoutes };
+    const server = createWorkerHandler({
+      tools: [definition],
+      sessionMode: 'stateless',
+      setup() {
+        if (strict) enforceReadLimits(definition);
+      },
+    });
+    async function rpc(method: string, params: object) {
+      const response = await server.fetch(
+        new Request('https://example.test/mcp', {
+          method: 'POST',
+          headers: {
+            accept: 'application/json, text/event-stream',
+            'content-type': 'application/json',
+            'mcp-protocol-version': '2025-11-25',
+          },
+          body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }),
+        }),
+        { MCP_AUTH_MODE: 'none' },
+        {} as never,
+      );
+      expect(response.status).toBe(200);
+      const messages = (await response.text())
+        .split('\n')
+        .filter((line) => line.startsWith('data: '))
+        .map((line) => JSON.parse(line.slice('data: '.length)));
+      const reply = messages.find((message) => message.id === 1);
+      expect(reply).toBeDefined();
+      return reply;
+    }
+
+    const listing = await rpc('tools/list', {});
+    const count = listing.result.tools[0].inputSchema.properties.maxCount;
+    expect(count).toMatchObject({ type: 'integer', default: 10 });
+    if (strict) expect(count).toHaveProperty('maximum', 6000);
+    else expect(count).not.toHaveProperty('maximum');
+
+    mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
+    const call = await rpc('tools/call', {
+      name: searchRoutes.name,
+      arguments: { query: '44', maxCount: 6001 },
+    });
+    if (strict) {
+      expect(call.result.structuredContent).toMatchObject({
+        error: { code: JsonRpcErrorCode.InvalidParams, data: { reason: 'invalid_arguments' } },
+      });
+      expect(mockService.searchRoutes).not.toHaveBeenCalled();
+    } else {
+      expect(call.result.structuredContent).toMatchObject({
+        routes: [],
+        notice: expect.stringContaining('maxCount was reduced from 6001 to 6000.'),
+      });
+      expect(mockService.searchRoutes).toHaveBeenCalledWith(
+        { query: '44', maxCount: 6000 },
+        expect.anything(),
+      );
+    }
+  },
+);
 
 // ---- getTrip ----
 

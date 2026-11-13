@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import {
+  applyArrivalWindow,
   arrivalSchema,
   arrivalsInput,
   emptyWindowAdvice,
@@ -18,7 +19,7 @@ import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.j
 export const getArrivals = tool('onebusaway_get_arrivals', {
   title: 'Get Real-Time Arrivals',
   description:
-    'Real-time arrivals and departures at a stop. Returns predicted arrival times, schedule deviation (how many seconds late/early), vehicle positions, and any active service alerts. The predicted boolean on each arrival indicates whether GPS tracking backs the estimate — predicted=false means schedule-only. Use tripId from results for follow-up onebusaway_get_trip calls. Stop IDs use agency-prefixed format: {agencyId}_{localId} (e.g. "1_75403").',
+    'Real-time arrivals and departures at a stop. Returns predicted arrival times, current vehicle schedule deviation, vehicle positions, and active service alerts. The predicted boolean on each arrival indicates whether GPS tracking backs the estimate — predicted=false means schedule-only. Use tripId from results for follow-up onebusaway_get_trip calls. Stop IDs use agency-prefixed format: {agencyId}_{localId} (e.g. "1_75403").',
   annotations: { readOnlyHint: true },
   input: arrivalsInput,
   output: z.object({
@@ -88,9 +89,7 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
     notice: z
       .string()
       .optional()
-      .describe(
-        'Guidance when no arrivals were found — widen minutesAfter, or check onebusaway_get_schedule_for_stop for scheduled service.',
-      ),
+      .describe('Applied input reductions and guidance when no arrivals were found.'),
   },
 
   enrichmentTrailer: {
@@ -100,14 +99,9 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
   },
 
   async handler(input, ctx) {
-    const result = await getOneBusAwayService().getArrivals(
-      {
-        stopId: input.stopId,
-        minutesBefore: input.minutesBefore,
-        minutesAfter: input.minutesAfter,
-      },
-      ctx,
-    );
+    const notices: string[] = [];
+    const window = applyArrivalWindow(input, ctx, notices);
+    const result = await getOneBusAwayService().getArrivals(window, ctx);
     ctx.log.info('getArrivals completed', {
       stopId: input.stopId,
       count: result.arrivals.length,
@@ -117,13 +111,14 @@ export const getArrivals = tool('onebusaway_get_arrivals', {
     ctx.enrich({
       queriedStop: input.stopId,
       count: result.arrivals.length,
-      windowMinutes: { before: input.minutesBefore, after: input.minutesAfter },
+      windowMinutes: { before: window.minutesBefore, after: window.minutesAfter },
     });
     if (result.arrivals.length === 0) {
-      ctx.enrich.notice(
-        `No arrivals found at ${input.stopId} within the next ${input.minutesAfter} minutes. ${emptyWindowAdvice(input.minutesAfter)}`,
+      notices.push(
+        `No arrivals found at ${input.stopId} between ${window.minutesBefore} minutes ago and ${window.minutesAfter} minutes from now. ${emptyWindowAdvice(window.minutesAfter)}`,
       );
     }
+    if (notices.length > 0) ctx.enrich.notice(notices.join(' '));
 
     return result;
   },

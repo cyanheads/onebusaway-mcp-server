@@ -5,7 +5,8 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { coords } from '@/mcp-server/tools/format-helpers.js';
+import { applyReadLimit, readCaps, readLimit } from '@/mcp-server/tools/read-limits.js';
+import { renderStop, stopRoutesSchema } from '@/mcp-server/tools/stop-shared.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const findStops = tool('onebusaway_find_stops', {
@@ -16,14 +17,12 @@ export const findStops = tool('onebusaway_find_stops', {
   input: z.object({
     lat: z.number().min(-90).max(90).describe('Latitude of the search center, in [-90, 90].'),
     lon: z.number().min(-180).max(180).describe('Longitude of the search center, in [-180, 180].'),
-    radius: z
-      .number()
-      .positive()
-      .max(1600)
-      .default(300)
-      .describe(
-        'Search radius in meters. Must be positive; capped at 1600m, beyond which results degrade. Defaults to 300m.',
-      ),
+    radius: readLimit(
+      z.number().positive(),
+      readCaps.radius,
+      300,
+      `Search radius in meters. Must be positive. Defaults to 300m, applied cap ${readCaps.radius}m.`,
+    ),
     query: z
       .string()
       .optional()
@@ -47,6 +46,7 @@ export const findStops = tool('onebusaway_find_stops', {
             lon: z.number().describe('Longitude of the stop.'),
             direction: z.string().describe('Compass direction of travel at this stop (e.g. "NW").'),
             routeIds: z.array(z.string()).describe('IDs of routes that serve this stop.'),
+            routes: stopRoutesSchema,
             wheelchairBoarding: z
               .enum(['ACCESSIBLE', 'NOT_ACCESSIBLE', 'UNKNOWN'])
               .describe('Wheelchair boarding status.'),
@@ -77,17 +77,17 @@ export const findStops = tool('onebusaway_find_stops', {
     notice: z
       .string()
       .optional()
-      .describe(
-        'Guidance when results are empty or truncated — e.g. how to narrow the radius or verify the stop code.',
-      ),
+      .describe('Applied input reductions and guidance when results are empty or truncated.'),
   },
 
   async handler(input, ctx) {
+    const notices: string[] = [];
+    const radius = applyReadLimit('radius', input.radius, readCaps.radius, ctx, notices);
     const result = await getOneBusAwayService().findStops(
       {
         lat: input.lat,
         lon: input.lon,
-        radius: input.radius,
+        radius,
         ...(input.query && { query: input.query }),
       },
       ctx,
@@ -99,16 +99,21 @@ export const findStops = tool('onebusaway_find_stops', {
 
     ctx.enrich({ count: result.stops.length, ...(input.query && { query: input.query }) });
     if (result.stops.length === 0) {
-      ctx.enrich.notice(
+      const advice =
+        radius < readCaps.radius
+          ? ' Try a larger radius or a different location.'
+          : ' Try a different location.';
+      notices.push(
         input.query
-          ? `No stops found with code "${input.query}" within ${input.radius}m. Verify the code or increase the radius.`
-          : `No stops found within ${input.radius}m. Try a larger radius (max ~1600m) or a different location.`,
+          ? `No stops found with code "${input.query}" within ${radius}m. Verify the code.${advice}`
+          : `No stops found within ${radius}m.${advice}`,
       );
     } else if (result.limitExceeded) {
-      ctx.enrich.notice(
+      notices.push(
         'Results truncated — more stops exist within the radius. Narrow the radius to see all stops.',
       );
     }
+    if (notices.length > 0) ctx.enrich.notice(notices.join(' '));
 
     return result;
   },
@@ -121,11 +126,7 @@ export const findStops = tool('onebusaway_find_stops', {
       lines.push('> Results truncated — narrow the radius to see all stops.');
     }
     for (const s of result.stops) {
-      lines.push(`\n## ${s.name}`);
-      lines.push(`**ID:** ${s.id} | **Code:** ${s.code} | **Direction:** ${s.direction}`);
-      lines.push(`**Coordinates:** ${coords(s.lat, s.lon)}`);
-      lines.push(`**Routes:** ${s.routeIds.join(', ') || 'none'}`);
-      lines.push(`**Wheelchair:** ${s.wheelchairBoarding}`);
+      lines.push('', ...renderStop(s));
     }
     return [{ type: 'text', text: lines.join('\n') }];
   },

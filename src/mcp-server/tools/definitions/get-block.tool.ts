@@ -13,6 +13,7 @@ import {
   tripSelectionSchema,
   tripSelectorFields,
 } from '@/mcp-server/tools/schedule-selection.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 /** Format seconds-from-midnight (GTFS) as HH:MM. */
@@ -83,12 +84,9 @@ export const getBlock = tool('onebusaway_get_block', {
   input: z
     .object({
       ...tripSelectorFields,
-      blockId: z
-        .string()
-        .min(1)
-        .describe(
-          'Block ID from a trip record. Obtain a tripId from onebusaway_get_arrivals, then call onebusaway_get_trip to get the blockId.',
-        ),
+      blockId: oneBusAwayIdSchema.describe(
+        'Block ID from a trip record. Obtain a tripId from onebusaway_get_arrivals, then call onebusaway_get_trip to get the blockId.',
+      ),
     })
     .superRefine(checkTripSelectors),
   output: z.object({

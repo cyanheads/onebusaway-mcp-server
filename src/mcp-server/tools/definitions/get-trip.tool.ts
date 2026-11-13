@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { coordsOrNone, formatEpoch, orNone } from '@/mcp-server/tools/format-helpers.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 /** Format seconds-from-midnight (GTFS schedule) as HH:MM. */
@@ -22,10 +23,12 @@ function fmtTimeSec(secs: number): string {
 export const getTrip = tool('onebusaway_get_trip', {
   title: 'Get Trip Status',
   description:
-    "Real-time status and stop sequence for a trip. Returns vehicle position, schedule deviation, current phase, and remaining stops. Use tripId from onebusaway_get_arrivals to look up a specific vehicle's progress.",
+    'Get the requested trip’s stop sequence and the vehicle status reported for its block. The status may describe a different active trip in the same block. Use the raw tripId from onebusaway_get_arrivals or a schedule lookup.',
   annotations: { readOnlyHint: true },
   input: z.object({
-    tripId: z.string().min(1).describe('Trip ID from an arrivals response or schedule lookup.'),
+    tripId: oneBusAwayIdSchema.describe(
+      'Raw trip ID from an arrivals response or schedule lookup.',
+    ),
     serviceDateMs: z
       .number()
       .int()
@@ -54,6 +57,14 @@ export const getTrip = tool('onebusaway_get_trip', {
       ),
     status: z
       .object({
+        activeTripId: z
+          .string()
+          .nullable()
+          .describe('Trip ID described by this vehicle status, or null when unavailable.'),
+        blockTripSequence: z
+          .number()
+          .nullable()
+          .describe('Sequence of the active trip within the block, or null when unavailable.'),
         phase: z
           .string()
           .describe(
@@ -75,7 +86,7 @@ export const getTrip = tool('onebusaway_get_trip', {
           .number()
           .describe('Timestamp of the last real-time update as Unix milliseconds.'),
       })
-      .describe('Real-time status of the trip.'),
+      .describe('Real-time vehicle status attributed to activeTripId when available.'),
     schedule: z
       .array(
         z
@@ -95,7 +106,9 @@ export const getTrip = tool('onebusaway_get_trip', {
           .describe('A scheduled stop time along this trip.'),
       )
       .nullable()
-      .describe('Full stop sequence with times, or null if includeSchedule=false.'),
+      .describe(
+        'Full stop sequence with times for the requested trip, or null if includeSchedule=false.',
+      ),
     situations: z.array(z.string()).describe('Active situation IDs affecting this trip.'),
   }),
   errors: [
@@ -118,6 +131,15 @@ export const getTrip = tool('onebusaway_get_trip', {
     },
   ],
 
+  enrichment: {
+    notice: z
+      .string()
+      .optional()
+      .describe(
+        'Attribution when the vehicle status describes another trip or its trip ID is unavailable.',
+      ),
+  },
+
   async handler(input, ctx) {
     const result = await getOneBusAwayService().getTrip(
       {
@@ -128,6 +150,14 @@ export const getTrip = tool('onebusaway_get_trip', {
       ctx,
     );
     ctx.log.info('getTrip completed', { tripId: input.tripId });
+    const activeTripId = result.status.activeTripId;
+    if (activeTripId === null) {
+      ctx.enrich.notice('OneBusAway did not identify the trip described by this vehicle status.');
+    } else if (activeTripId !== result.tripId) {
+      ctx.enrich.notice(
+        `Vehicle status describes active trip ${activeTripId}. The requested trip is ${result.tripId}.`,
+      );
+    }
     return result;
   },
 
@@ -145,6 +175,9 @@ export const getTrip = tool('onebusaway_get_trip', {
       `## Route ${result.routeShortName} → ${result.tripHeadsign}`,
       `**Trip ID:** ${result.tripId}`,
       `**Timezone:** ${result.timezone}`,
+      '\n## Vehicle status',
+      `**Active trip ID:** ${orNone(s.activeTripId)}`,
+      `**Block trip sequence:** ${orNone(s.blockTripSequence)}`,
       `**Phase:** ${s.phase} | **Predicted:** ${s.predicted}`,
       `**Schedule deviation:** ${devLabel} (${s.scheduleDeviation}s)`,
     ];
@@ -163,12 +196,14 @@ export const getTrip = tool('onebusaway_get_trip', {
     }
 
     if (result.schedule && result.schedule.length > 0) {
-      lines.push('\n## Stop Sequence');
+      lines.push(`\n## Stop Sequence for ${result.tripId}`);
       for (const st of result.schedule) {
         lines.push(
           `- **${st.stopName}** (${st.stopId}) — arr ${fmtTimeSec(st.arrivalTime)} [${st.arrivalTime}s], dep ${fmtTimeSec(st.departureTime)} [${st.departureTime}s] | dist ${st.distanceAlongTripMeters}m`,
         );
       }
+    } else {
+      lines.push('**Schedule:** none');
     }
 
     return [{ type: 'text', text: lines.join('\n') }];

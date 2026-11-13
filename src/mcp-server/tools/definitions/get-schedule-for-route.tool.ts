@@ -12,6 +12,7 @@ import {
   tripSelectionSchema,
   tripSelectorFields,
 } from '@/mcp-server/tools/schedule-selection.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 /** Format seconds-from-midnight (GTFS schedule) as HH:MM. */
@@ -33,12 +34,9 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
   input: z
     .object({
       ...tripSelectorFields,
-      routeId: z
-        .string()
-        .min(1)
-        .describe(
-          'Agency-prefixed route ID (e.g. "1_100259"). Use onebusaway_find_routes or onebusaway_search_routes to discover IDs.',
-        ),
+      routeId: oneBusAwayIdSchema.describe(
+        'Raw agency-prefixed route ID (e.g. "1_100259"). Use onebusaway_find_routes or onebusaway_list_routes_for_agency to discover IDs.',
+      ),
       date: z
         .union([
           z.literal(''),
@@ -104,7 +102,7 @@ export const getScheduleForRoute = tool('onebusaway_get_schedule_for_route', {
       code: JsonRpcErrorCode.NotFound,
       when: 'Route ID does not exist on this instance.',
       recovery:
-        'Search for the route with onebusaway_find_routes or onebusaway_search_routes to get a valid ID.',
+        'Look up the route with onebusaway_find_routes or onebusaway_list_routes_for_agency to get a valid ID.',
       thrownBy: 'service',
     },
     {

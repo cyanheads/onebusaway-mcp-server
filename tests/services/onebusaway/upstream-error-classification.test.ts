@@ -11,7 +11,6 @@ import type { AddressInfo } from 'node:net';
 import { JsonRpcErrorCode, McpError } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import type { ServerConfig } from '@/config/server-config.js';
 import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
 import {
   disposeOneBusAwayService,
@@ -34,6 +33,12 @@ let baseUrl: string;
 
 beforeAll(async () => {
   upstream = createServer((req, res) => {
+    const url = new URL(req.url ?? '', 'http://localhost');
+    if (url.pathname.startsWith('/api/where/search/')) {
+      res.writeHead(Number(url.searchParams.get('input')), { 'content-type': 'application/json' });
+      res.end(JSON.stringify(RESPONSES[404]));
+      return;
+    }
     const status = Number(/\/(\d{3})\.json/.exec(req.url ?? '')?.[1]);
     res.writeHead(status, { 'content-type': 'application/json' });
     res.end(JSON.stringify(RESPONSES[status]));
@@ -50,7 +55,9 @@ afterEach(() => {
   disposeOneBusAwayService();
 });
 
-function config(overrides: Partial<ServerConfig> = {}): ServerConfig {
+type ServiceConfig = Parameters<typeof initOneBusAwayService>[0];
+
+function config(overrides: Partial<ServiceConfig> = {}): ServiceConfig {
   return {
     apiKey: 'TEST',
     baseUrl,
@@ -72,6 +79,23 @@ async function caught(promise: Promise<unknown>): Promise<McpError> {
 }
 
 describe('classification of upstream failures (current behavior)', () => {
+  it.each(['200', '404'])(
+    'treats search envelope 404 over HTTP %s as an empty result',
+    async (query) => {
+      initOneBusAwayService(config());
+      const service = getOneBusAwayService();
+      const ctx = createMockContext();
+      await expect(service.searchRoutes({ query }, ctx)).resolves.toEqual({
+        routes: [],
+        limitExceeded: false,
+      });
+      await expect(service.searchStops({ query }, ctx)).resolves.toEqual({
+        stops: [],
+        limitExceeded: false,
+      });
+    },
+  );
+
   it('HTTP 404 → NotFound carrying the contract reason and discovery hint', async () => {
     initOneBusAwayService(config());
     const err = await caught(

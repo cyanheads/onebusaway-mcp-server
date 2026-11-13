@@ -20,7 +20,7 @@
 | `onebusaway_get_vehicles` | Real-time vehicle positions for an agency, optionally filtered to one route, with missing-position counts and counter-clockwise orientation from east. | `agencyId`, `routeId?` | `readOnlyHint: true` |
 | `onebusaway_list_agencies` | List all transit agencies served by this OneBusAway instance, with agency IDs needed for other calls. | (none) | `readOnlyHint: true`, `openWorldHint: false` |
 | `onebusaway_list_routes_for_agency` | List all routes operated by an agency. | `agencyId` | `readOnlyHint: true`, `openWorldHint: false` |
-| `onebusaway_search_stops` | Search for stops by name or code string. Useful for resolving a stop name to an ID. | `query`, `maxCount?` | `readOnlyHint: true` |
+| `onebusaway_search_stops` | Search for stops by name. | `query`, `maxCount?` | `readOnlyHint: true` |
 | `onebusaway_search_routes` | Search for routes by name or number. Useful for resolving a route short name (e.g. "44") to a route ID. | `query`, `maxCount?` | `readOnlyHint: true` |
 
 ### Resources
@@ -73,6 +73,7 @@ Single service, single SDK client. Initialized once at startup with `baseURL` an
 |:--------|:---------|:------------|
 | `ONEBUSAWAY_API_KEY` | No (defaults to `TEST`) | API key for the OneBusAway instance. `TEST` works on Puget Sound for development. |
 | `ONEBUSAWAY_BASE_URL` | No (defaults to Puget Sound) | Base URL of the OneBusAway instance. Override to target NYC (`https://bustime.mta.info`), Tampa (`https://api.tampa.onebusaway.org`), or a self-hosted instance. |
+| `ONEBUSAWAY_CLAMP_LIMITS` | No (defaults to `true`) | Clamp over-limit search counts, radii, and arrival windows. Set `false` to reject them before the upstream request. |
 | `ONEBUSAWAY_RATE_LIMIT_REQUESTS` | No (defaults to `20`) | Upstream requests allowed per window, shared by all callers. |
 | `ONEBUSAWAY_RATE_LIMIT_WINDOW_MS` | No (defaults to `60000`) | Width of the sliding rate window, in ms. |
 | `ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS` | No (defaults to `45000`) | Longest a call waits for a slot before failing as `rate_limited`, in ms. |
@@ -117,7 +118,7 @@ Each step is independently testable.
 
 The primary real-time tool — the most common agent query.
 
-**Description:** Real-time arrivals and departures at a stop. Returns predicted arrival times, schedule deviation (how many seconds late/early), vehicle positions, and any active service alerts affecting the stop. Predicted times are available for vehicles with GPS tracking; falls back to scheduled times when a vehicle isn't tracked.
+**Description:** Real-time arrivals and departures at a stop. Returns scheduled and predicted arrivals, current vehicle deviation, vehicle positions, and active service alerts. Use the scheduled time when no prediction is available.
 
 **Input schema:**
 ```
@@ -126,7 +127,7 @@ minutesBefore: integer 0–60 (default 5) — Include arrivals that departed up 
 minutesAfter: integer 0–240 (default 35) — Include arrivals expected within the next N minutes. Longer horizons belong to onebusaway_get_schedule_for_stop.
 ```
 
-Both bounds are enforced at the schema: OneBusAway binds the two values to a 32-bit int without validation, so negatives shift the window and large values overflow. An empty window's `notice` suggests raising `minutesAfter` only while it is below 240.
+The arrival windows must be nonnegative integers. The caps apply before the upstream request to keep OneBusAway's window calculation within range. When clamping is enabled, each reduction reports the requested and applied values in a response notice and warning log, and increments the `onebusaway.input.clamped` counter. An empty window's notice suggests raising `minutesAfter` only while the applied value is below 240.
 
 **Output schema:**
 ```
@@ -140,10 +141,10 @@ arrivals: Array of:
   predicted: boolean — true if GPS-tracked; false if schedule-only.
   predictedArrivalTime: number | null — Unix ms; null if unpredicted.
   scheduledArrivalTime: number — Unix ms.
-  scheduleDeviation: number — Seconds late (positive) or early (negative). Only meaningful when predicted=true.
+  scheduleDeviation: number — Current vehicle deviation in seconds, positive when late and meaningful when predicted=true. The deviation at this stop is predicted minus scheduled arrival time when a prediction is present.
   vehicleId: string | null
   vehiclePosition: { lat: number, lon: number } | null
-  stopsAway: number | null — Number of stops until this stop.
+  stopsAway: number | null — Queried stop's block sequence minus the vehicle's next stop block sequence. Upstream can also report zero when the offset is unavailable.
   tripId: string — For follow-up onebusaway_get_trip calls.
   routeId: string — For follow-up route calls.
   situationIds: string[]
@@ -174,7 +175,7 @@ An upstream HTTP 400 on any tool surfaces as a non-retryable `ValidationError` c
 
 **Output schema:**
 ```
-stop: { id, code, name, lat, lon, direction, wheelchairBoarding } | null — The onebusaway_get_stop fields minus routeIds (the references copy lists only routes in this response). Null when the response omits the stop.
+stop: { id, code, name, lat, lon, direction, wheelchairBoarding } | null — Served routes come from onebusaway_get_stop because arrival references cover only the response window. Null when the response omits the stop.
 timezone: string — Validated queried-stop agency zone, otherwise UTC.
 currentTime: number — Server time as Unix milliseconds.
 arrivals: Array — Same shape as onebusaway_get_arrivals.
@@ -197,7 +198,7 @@ A referenced alert missing from the response's references is left out, and the `
 ```
 lat: number — Latitude of the search center.
 lon: number — Longitude of the search center.
-radius: number (default 300) — Search radius in meters. Max ~1600m before results degrade.
+radius: number (default 300, cap 1600) — Positive search radius in meters.
 query: string? — Optional stop code filter (the number printed on the stop sign, e.g. "75403"). When provided, returns only stops matching this code within the radius.
 ```
 
@@ -211,6 +212,7 @@ stops: Array of:
   lon: number
   direction: string — Compass direction of travel at this stop (e.g. "NW").
   routeIds: string[] — IDs of routes that serve this stop.
+  routes: Array of { id: string, shortName: string, agencyId: string } — Summaries for IDs with a route reference, in routeIds order.
   wheelchairBoarding: "ACCESSIBLE" | "NOT_ACCESSIBLE" | "UNKNOWN"
 limitExceeded: boolean — true if more stops exist beyond the returned set; narrow the radius.
 ```
@@ -227,7 +229,7 @@ limitExceeded: boolean — true if more stops exist beyond the returned set; nar
 ```
 lat: number
 lon: number
-radius: number (default 500) — Search radius in meters.
+radius: number (default 500, cap 1600) — Positive search radius in meters. Clamp mode reduces the radius only when the request uses it.
 query: string? — Filter by route name or number (e.g. "44" or "Link Light Rail").
 ```
 
@@ -266,7 +268,8 @@ name: string
 lat: number
 lon: number
 direction: string — Compass direction of travel at this stop (e.g. "NW").
-routeIds: string[] — IDs of routes that serve this stop. Use with onebusaway_get_arrivals or onebusaway_get_schedule_for_stop.
+routeIds: string[] — IDs of routes that serve this stop, in upstream order.
+routes: Array of { id: string, shortName: string, agencyId: string } — Summaries for IDs with a route reference, in routeIds order. Missing references leave the corresponding IDs in routeIds and require a separate route lookup if metadata is needed.
 wheelchairBoarding: "ACCESSIBLE" | "NOT_ACCESSIBLE" | "UNKNOWN"
 ```
 
@@ -303,7 +306,7 @@ url: string | null — Agency schedule page URL.
 
 **Error contract:**
 ```
-{ reason: 'route_not_found', code: NotFound, when: 'Route ID does not exist', recovery: 'Search for the route with onebusaway_find_routes or onebusaway_search_routes to get a valid ID.' }
+{ reason: 'route_not_found', code: NotFound, when: 'Route ID does not exist', recovery: 'Look up the route with onebusaway_find_routes or onebusaway_list_routes_for_agency to get a valid ID.' }
 ```
 
 **Annotations:** `readOnlyHint: true`
@@ -384,7 +387,7 @@ Route, stop, headsign, and service metadata resolve field by field from referenc
 
 **Error contract:**
 ```
-{ reason: 'route_not_found', code: NotFound, when: 'Route ID does not exist', recovery: 'Search for the route with onebusaway_find_routes or onebusaway_search_routes to get a valid ID.' }
+{ reason: 'route_not_found', code: NotFound, when: 'Route ID does not exist', recovery: 'Look up the route with onebusaway_find_routes or onebusaway_list_routes_for_agency to get a valid ID.' }
 ```
 
 **Annotations:** `readOnlyHint: true`
@@ -410,6 +413,8 @@ tripHeadsign: string
 timezone: string — Validated trip-route agency zone, otherwise UTC.
 blockId: string | null — For follow-up onebusaway_get_block calls.
 status:
+  activeTripId: string | null — Trip described by live status when identified upstream.
+  blockTripSequence: number | null — Active trip sequence within the block when available. Zero is a valid sequence.
   phase: string — "in_progress" | "layover_before" | "layover_during" | etc.
   predicted: boolean
   position: { lat: number, lon: number } | null
@@ -421,6 +426,8 @@ status:
 schedule: Array of: { stopId: string, stopName: string, arrivalTime: number, departureTime: number, distanceAlongTripMeters: number } | null
 situations: string[] — Active situation IDs.
 ```
+
+The top-level trip ID and schedule refer to the requested trip. The live status can describe another trip in the same block, including when `includeSchedule` is false. A differing ID does not establish the relative order of the two trips.
 
 **Error contract:**
 ```
@@ -507,8 +514,8 @@ Top-level fields always describe the first returned configuration; the endpoint 
 
 **Input schema:**
 ```
-agencyId: string — Agency ID (e.g. "1" for Metro Transit, "40" for Sound Transit). Use onebusaway_list_agencies to discover IDs.
-routeId: string? — Optional agency-prefixed route ID to filter results to one route. Filtering is client-side.
+agencyId: string — Agency namespace of the vehicle IDs to fetch. Obtain it from the prefix of a known vehicleId. It can differ from the route's operating agency.
+routeId: string? — Optional raw route ID. Filtering is an exact local match.
 ```
 
 **Output schema:**
@@ -558,7 +565,7 @@ agencies: Array of:
   phone: string | null
   timezone: string
   coverageCenter: { lat: number, lon: number }
-  coverageSpan: { latSpan: number, lonSpan: number }
+coverageSpan: { latSpan: number, lonSpan: number } — Full latitude and longitude widths in degrees.
 ```
 
 **Annotations:** `readOnlyHint: true`, `openWorldHint: false`
@@ -597,12 +604,12 @@ routes: Array of:
 
 ### `onebusaway_search_stops`
 
-**Description:** Search for stops by name or code. Returns matching stops with IDs and coordinates. Use to resolve a human-readable stop name or number to a stop ID for arrivals lookups.
+**Description:** Search for stops by name. To look up a stop sign code, pass the code as `query` with the stop's approximate coordinates to `onebusaway_find_stops`.
 
 **Input schema:**
 ```
-query: string — Stop name fragment or stop code (e.g. "University Way" or "75403").
-maxCount: number (default 10) — Maximum results to return.
+query: string — Stop name fragment (e.g. "University Way").
+maxCount: positive integer (default 10, cap 3500) — Maximum results to request.
 ```
 
 **Output schema:**
@@ -615,7 +622,9 @@ stops: Array of:
   lon: number
   direction: string
   routeIds: string[]
+  routes: Array of { id: string, shortName: string, agencyId: string } — Summaries for IDs with a route reference, in routeIds order.
   wheelchairBoarding: "ACCESSIBLE" | "NOT_ACCESSIBLE" | "UNKNOWN"
+limitExceeded: boolean — Upstream reports more matches than it returned.
 ```
 
 **Annotations:** `readOnlyHint: true`
@@ -624,12 +633,12 @@ stops: Array of:
 
 ### `onebusaway_search_routes`
 
-**Description:** Search for routes by name or number. Returns matching routes with IDs. Use to resolve a route short name (e.g. "44") to a route ID for schedule or vehicle lookups.
+**Description:** Search for routes by name or number. An empty result can occur for known routes. Try `onebusaway_find_routes` near the service area or `onebusaway_list_routes_for_agency` to verify a route.
 
 **Input schema:**
 ```
 query: string — Route name or number (e.g. "44" or "Link" or "Rapid Ride").
-maxCount: number (default 10) — Maximum results to return.
+maxCount: positive integer (default 10, cap 6000) — Maximum results to request.
 ```
 
 **Output schema:**
@@ -642,7 +651,10 @@ routes: Array of:
   agencyId: string
   agencyName: string
   type: number — GTFS route type (3=bus, 1=metro, 2=rail, 4=ferry).
+limitExceeded: boolean — Upstream reports more matches than it returned.
 ```
+
+Both search tools suggest refining the query when the applied count is already at its cap.
 
 **Annotations:** `readOnlyHint: true`
 
@@ -661,26 +673,28 @@ For "where is the 44 right now?":
 
 | # | Tool | Purpose |
 |:--|:-----|:--------|
-| 1 | `onebusaway_search_routes` | Resolve "44" to route ID `1_100225` |
-| 2 | `onebusaway_get_vehicles` | List vehicles on that route, filtered by `routeId` |
+| 1 | `onebusaway_find_routes` or `onebusaway_list_routes_for_agency` | Resolve the route number to an exact route ID |
+| 2 | `onebusaway_find_stops` | Identify a stop served by the route near the service area |
+| 3 | `onebusaway_get_arrivals` | Obtain a vehicle ID from a matching arrival when available |
+| 4 | `onebusaway_get_vehicles` | Use the vehicle's agency namespace and filter by exact route ID |
 
 For "what's the schedule for route 44 today?":
 
 | # | Tool | Purpose |
 |:--|:-----|:--------|
-| 1 | `onebusaway_search_routes` | Resolve to route ID |
+| 1 | `onebusaway_find_routes` or `onebusaway_list_routes_for_agency` | Resolve the route ID |
 | 2 | `onebusaway_get_schedule_for_route` | Full day schedule |
 
 For "is my bus late?":
 
 | # | Tool | Purpose |
 |:--|:-----|:--------|
-| 1 | `onebusaway_get_arrivals` | Gets a specific arrival with `tripId` and `scheduleDeviation` |
+| 1 | `onebusaway_get_arrivals` | Get a specific arrival's scheduled and predicted times |
 | 2 | `onebusaway_get_trip` (optional) | Deeper vehicle status if needed |
 
-The arrivals response is designed to answer "is my bus late?" in one call — `scheduleDeviation` on each arrival, plus `situationIds` for active alerts. `onebusaway_get_trip` is the follow-up for "show me where the bus is on the map."
+Compare predicted and scheduled arrival times for the delay at the stop. Follow the arrival's trip ID to `onebusaway_get_trip` for vehicle progress and its `situationIds` to `onebusaway_get_alert` for alert detail.
 
-For "what's happening at this stop?", `onebusaway_get_stop_context` returns the stop, its arrivals, and every alert in full from one upstream request — the 2+N-call chain of `get_stop`, `get_arrivals`, and `get_alert` per alert collapsed into one.
+For "what's happening at this stop?", use `onebusaway_get_stop_context` for the stop summary, arrivals, and alert details from one upstream request.
 
 ---
 
@@ -704,7 +718,7 @@ Two env vars (`ONEBUSAWAY_BASE_URL`, `ONEBUSAWAY_API_KEY`) configure the target 
 
 **Decision: expose both search and location-based tools as separate tools.**
 
-The API has two orthogonal discovery paths: location-based (`stops-for-location`, `routes-for-location`) and name-based search (`search/stop`, `search/route`). These serve different agent workflows: "stops near Pike Place Market" vs. "find stop 75403". Merging them into one tool with a `mode` parameter would complicate the common case — the inputs don't overlap and the resolution path differs. Keeping them as `_find_*` (location) and `_search_*` (name/code) is cleaner.
+Location discovery takes coordinates and an optional filter, including the printed code for stops. Text search takes a stop name or a route name or number.
 
 ### Real-time vs. scheduled data
 
@@ -757,7 +771,7 @@ OBA IDs use an `{agencyId}_{localId}` format (e.g. `1_75403` for Metro Transit s
 - **No trip planning.** OneBusAway does not include routing between origin and destination. Direct users to transitapp.com, Google Maps, or OpenTripPlanner for journey planning.
 - **Rate limits undocumented but enforced.** The Puget Sound instance enforces rate limits (observed: ~20 req/min per IP). The server will surface 429 with a retry hint. Production use of the TEST key should be replaced with a registered key.
 - **Predicted data requires GPS.** Many agencies report vehicles on schedule only. `predicted=false` arrivals are schedule-based estimates. `vehiclePosition` and `scheduleDeviation` are only meaningful when `predicted=true`.
-- **Stop IDs are instance-specific.** A stop ID from the Puget Sound instance is not valid on NYC or Tampa. When targeting multiple instances, stop IDs from one cannot be used with another.
+- **Lookup IDs are instance-specific.** Tool arguments take raw IDs from discovery. Resource template variables are URI-decoded once by the framework before the same validation. Path IDs reject empty values, dot segments, control characters, percent signs, slashes, backslashes, query delimiters, and fragment delimiters. The service encodes accepted IDs once at the SDK boundary. Exact-match selectors compare raw values locally.
 - **Schedule data is static.** Schedule tools return GTFS static data. They do not reflect real-time service modifications (cancellations, added trips) unless the OBA instance has a GTFS-RT service alert feed configured.
 - **trips-for-location is sparse.** Live testing against the Puget Sound instance showed zero results from a 500m radius query near downtown Seattle. The endpoint is not exposed; use `get_vehicles` instead.
 - **Shape/polyline data excluded.** Route and trip shape polylines are returned by some endpoints but are omitted from tool outputs — they're large encoded strings that consume context budget without adding decision-making value for an agent. Expose via `onebusaway_get_route` if a mapping use case emerges.
@@ -803,7 +817,7 @@ All times are Unix milliseconds (not seconds). Service dates (for grouping trips
 | 2026-05-23 | Omit shape/polyline data | Large encoded strings with no decision-making value for an agent; can be added later if a mapping use case emerges. |
 | 2026-05-23 | Stop + route resources only | Stop/route metadata is stable and ID-addressable; trip/vehicle state changes too fast for cacheable resources. |
 | 2026-09-19 | Pace upstream requests through a process-wide queue instead of retrying | One API key is shared by every caller; a retry spends the same budget that is already exhausted. Supersedes the `withRetry` entry above. |
-| 2026-09-24 | Bound `minutesBefore` to integers 0–60 and `minutesAfter` to 0–240 | OneBusAway computes the window in unchecked 32-bit arithmetic, so out-of-range values return a wrong window as HTTP 200; 240 minutes is already ~31 KB of arrivals, and longer horizons belong to the schedule tools. |
+| 2026-09-24 | Cap `minutesBefore` at 60 and `minutesAfter` at 240 | OneBusAway computes the window in unchecked 32-bit arithmetic. Longer horizons belong to the schedule tools. |
 | 2026-09-24 | Schedule `date` must be a real `YYYY-MM-DD` date (blank = today) | OneBusAway parses dates leniently — impossible dates roll over and all-digit values read as epoch ms — so a malformed date silently returned another day's schedule. |
 | 2026-09-24 | Upstream HTTP 400 → non-retryable `ValidationError` | A 400 is a rejected input; reporting it as `ServiceUnavailable` invited retries that can never succeed. |
-| 2026-09-24 | Add `onebusaway_get_stop_context` instead of widening `get_arrivals` | The arrivals response already carries the stop and every alert in full, so one request replaces 2+N; `get_arrivals` stays lean. The stop omits `routeIds` because the references copy lists only routes in that response. |
+| 2026-09-24 | Expose stop context through `onebusaway_get_stop_context` | The arrivals response carries stop and alert details in one request. Complete served-route metadata comes from `onebusaway_get_stop`. |

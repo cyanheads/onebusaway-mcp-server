@@ -10,7 +10,6 @@
 import { JsonRpcErrorCode, McpError, requestCancelled } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ServerConfig } from '@/config/server-config.js';
 import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
 import { contentText } from '../../tools/format-parity.helper.js';
 
@@ -73,7 +72,7 @@ type ErrData = {
   recovery?: { hint?: string };
 };
 
-const mockConfig: ServerConfig = {
+const mockConfig: Parameters<typeof initOneBusAwayService>[0] = {
   apiKey: 'TEST',
   baseUrl: 'https://api.pugetsound.onebusaway.org',
   rateLimitRequests: 20,
@@ -139,7 +138,7 @@ describe('ID-lookup null resp.data → NotFound with reason + recovery hint (#22
   it('getRoute: SDK resolves null → route_not_found', async () => {
     h.methods.route.retrieve.mockResolvedValue(null);
     const err = await caught(getOneBusAwayService().getRoute('1_bad', ctx));
-    expectNotFoundWithHint(err, 'route_not_found', '1_bad', /onebusaway_search_routes/);
+    expectNotFoundWithHint(err, 'route_not_found', '1_bad', /onebusaway_find_routes/);
   });
 
   it('getTrip: SDK resolves null → trip_not_found', async () => {
@@ -157,7 +156,7 @@ describe('ID-lookup null resp.data → NotFound with reason + recovery hint (#22
   it('getScheduleForRoute: SDK resolves null → route_not_found', async () => {
     h.methods.scheduleForRoute.retrieve.mockResolvedValue(null);
     const err = await caught(getOneBusAwayService().getScheduleForRoute({ routeId: '1_bad' }, ctx));
-    expectNotFoundWithHint(err, 'route_not_found', '1_bad', /onebusaway_search_routes/);
+    expectNotFoundWithHint(err, 'route_not_found', '1_bad', /onebusaway_find_routes/);
   });
 
   it('getBlock: SDK resolves null → block_not_found', async () => {
@@ -342,16 +341,20 @@ describe('recovery hints on SDK-thrown NotFoundError via classifyError (#17)', (
     expect(err.code).toBe(JsonRpcErrorCode.NotFound);
     const data = err.data as ErrData;
     expect(data.reason).toBe('route_not_found');
-    expect(data.recovery?.hint).toMatch(/onebusaway_search_routes/);
+    expect(data.recovery?.hint).toMatch(
+      /onebusaway_find_routes.*onebusaway_list_routes_for_agency/,
+    );
   });
 
-  it('getStop: SDK NotFoundError → stop_not_found carries the {agencyId}_{localId} hint', async () => {
+  it('getStop: SDK NotFoundError distinguishes location and code from name discovery', async () => {
     h.methods.stop.retrieve.mockRejectedValue(new h.NotFoundError('404 Not Found'));
     const err = await caught(getOneBusAwayService().getStop('1_bad', ctx));
     expect(err.code).toBe(JsonRpcErrorCode.NotFound);
     const data = err.data as ErrData;
     expect(data.reason).toBe('stop_not_found');
-    expect(data.recovery?.hint).toMatch(/\{agencyId\}_\{localId\}/);
+    expect(data.recovery?.hint).toMatch(
+      /onebusaway_find_stops.*code.*onebusaway_search_stops.*name/,
+    );
   });
 });
 

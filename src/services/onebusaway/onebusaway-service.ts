@@ -16,6 +16,7 @@ import {
 import { createPacer, type Pacer } from '@cyanheads/mcp-ts-core/utils';
 import OnebusawaySDK from 'onebusaway-sdk';
 import type { ServerConfig } from '@/config/server-config.js';
+import { encodeOneBusAwayId } from './identifier.js';
 import type {
   Agency,
   ArrivalEntry,
@@ -30,6 +31,7 @@ import type {
   SituationDetail,
   Stop,
   StopContextResult,
+  StopRoute,
   StopScheduleResult,
   StopScheduleRoute,
   StopSelectors,
@@ -51,6 +53,11 @@ const COOLDOWN_SECONDS = COOLDOWN.baseMs / 1000;
 /** Absolute backpressure — an arrival behind this many waiters is shed instead of queued. */
 const MAX_QUEUE_DEPTH = 200;
 
+type ServiceConfig = Pick<
+  ServerConfig,
+  'apiKey' | 'baseUrl' | 'rateLimitRequests' | 'rateLimitWindowMs' | 'rateLimitMaxWaitMs'
+>;
+
 /** Maps wheelchair_boarding string/number to the canonical enum value. */
 function normalizeWheelchair(raw: string | undefined): 'ACCESSIBLE' | 'NOT_ACCESSIBLE' | 'UNKNOWN' {
   if (raw === '1' || raw === 'ACCESSIBLE') return 'ACCESSIBLE';
@@ -58,8 +65,7 @@ function normalizeWheelchair(raw: string | undefined): 'ACCESSIBLE' | 'NOT_ACCES
   return 'UNKNOWN';
 }
 
-/** Builds a Stop domain object from a raw API stop shape. */
-function normalizeStop(raw: {
+type RawStop = {
   id: string;
   code?: string;
   name: string;
@@ -68,7 +74,10 @@ function normalizeStop(raw: {
   direction?: string;
   routeIds: string[];
   wheelchairBoarding?: string;
-}): Stop {
+};
+
+/** Builds the stop fields common to stop and arrivals responses. */
+function normalizeStopSummary(raw: RawStop): StopSummary {
   return {
     id: raw.id,
     code: raw.code ?? '',
@@ -76,8 +85,40 @@ function normalizeStop(raw: {
     lat: raw.lat,
     lon: raw.lon,
     direction: raw.direction ?? '',
-    routeIds: raw.routeIds,
     wheelchairBoarding: normalizeWheelchair(raw.wheelchairBoarding),
+  };
+}
+
+/** Indexes the route metadata available in one stop response. */
+function indexStopRoutes(
+  references: ReadonlyArray<{
+    id: string;
+    agencyId: string;
+    shortName?: string;
+    nullSafeShortName?: string;
+  }> = [],
+): Map<string, StopRoute> {
+  return new Map(
+    references.map((route) => [
+      route.id,
+      {
+        id: route.id,
+        agencyId: route.agencyId,
+        shortName: firstNonEmpty(route.shortName, route.nullSafeShortName),
+      },
+    ]),
+  );
+}
+
+/** Resolves only the served routes present in the same response. */
+function normalizeStop(raw: RawStop, routeMap: ReadonlyMap<string, StopRoute>): Stop {
+  return {
+    ...normalizeStopSummary(raw),
+    routeIds: raw.routeIds,
+    routes: raw.routeIds.flatMap((id) => {
+      const route = routeMap.get(id);
+      return route ? [route] : [];
+    }),
   };
 }
 
@@ -160,11 +201,10 @@ function matchesTrip(
  */
 const NOT_FOUND_HINTS: Record<string, string> = {
   stop_not_found:
-    'Stop IDs come from onebusaway_search_stops or onebusaway_find_stops, in {agencyId}_{localId} format (e.g. "1_75403").',
+    'Use onebusaway_find_stops to look up a stop by location and optional code, or onebusaway_search_stops to look up a stop by name.',
   route_not_found:
-    'Route IDs come from onebusaway_search_routes or onebusaway_list_routes_for_agency — a route ID is not the short name shown on the vehicle (e.g. "44").',
-  agency_not_found:
-    'Agency IDs are numeric and come from onebusaway_list_agencies; an agency name is not accepted.',
+    'Use onebusaway_find_routes to look up a route by location or onebusaway_list_routes_for_agency to list routes by agency. Pass the resulting route ID.',
+  agency_not_found: 'Use the agency ID returned by onebusaway_list_agencies.',
   trip_not_found: 'A tripId comes from onebusaway_get_arrivals — each arrival carries its tripId.',
   block_not_found: 'A blockId comes from onebusaway_get_trip — the trip carries its blockId.',
   situation_not_found: 'A situationId comes from onebusaway_get_arrivals (situations[].id).',
@@ -435,7 +475,7 @@ export class OneBusAwayService {
   private readonly pacer: Pacer;
   private readonly maxWaitMs: number;
 
-  constructor(config: ServerConfig) {
+  constructor(config: ServiceConfig) {
     this.client = new OnebusawaySDK({
       apiKey: config.apiKey,
       baseURL: config.baseUrl,
@@ -520,8 +560,9 @@ export class OneBusAwayService {
         });
         if (!resp?.data)
           throw serviceUnavailable('OneBusAway returned no data for the stops-for-location query.');
+        const routeMap = indexStopRoutes(resp.data.references?.routes);
         return {
-          stops: resp.data.list.map(normalizeStop),
+          stops: resp.data.list.map((stop) => normalizeStop(stop, routeMap)),
           limitExceeded: resp.data.limitExceeded ?? false,
         };
       } catch (err) {
@@ -534,10 +575,10 @@ export class OneBusAwayService {
     ctx.log.debug('getStop', { stopId });
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.stop.retrieve(stopId);
+        const resp = await this.client.stop.retrieve(encodeOneBusAwayId(stopId));
         if (!resp?.data?.entry)
           throw notFound(`stop "${stopId}" not found.`, notFoundData(stopId, 'stop_not_found'));
-        return normalizeStop(resp.data.entry);
+        return normalizeStop(resp.data.entry, indexStopRoutes(resp.data.references?.routes));
       } catch (err) {
         classifyError(err, 'stop', stopId, 'stop_not_found');
       }
@@ -556,12 +597,13 @@ export class OneBusAwayService {
           ...(params.maxCount != null && { maxCount: params.maxCount }),
         });
         if (!resp?.data) return { stops: [], limitExceeded: false };
+        const routeMap = indexStopRoutes(resp.data.references?.routes);
         return {
-          stops: resp.data.list.map(normalizeStop),
+          stops: resp.data.list.map((stop) => normalizeStop(stop, routeMap)),
           limitExceeded: resp.data.limitExceeded ?? false,
         };
       } catch (err) {
-        // OBA returns 404 when no stops match — not a real error, just an empty result.
+        // Search 404s carry no information beyond an empty result.
         if (err instanceof OnebusawaySDK.NotFoundError) return { stops: [], limitExceeded: false };
         classifyError(err, 'search/stop', params.query);
       }
@@ -611,7 +653,7 @@ export class OneBusAwayService {
     ctx.log.debug('getRoute', { routeId });
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.route.retrieve(routeId);
+        const resp = await this.client.route.retrieve(encodeOneBusAwayId(routeId));
         if (!resp?.data)
           throw notFound(`route "${routeId}" not found.`, notFoundData(routeId, 'route_not_found'));
         const refs = resp.data.references;
@@ -631,7 +673,7 @@ export class OneBusAwayService {
     ctx.log.debug('listRoutesForAgency', { agencyId });
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.routesForAgency.list(agencyId);
+        const resp = await this.client.routesForAgency.list(encodeOneBusAwayId(agencyId));
         if (!resp?.data)
           throw notFound(
             `agency "${agencyId}" not found.`,
@@ -666,7 +708,7 @@ export class OneBusAwayService {
         );
         return { routes, limitExceeded: resp.data.limitExceeded ?? false };
       } catch (err) {
-        // OBA returns 404 when no routes match — not a real error, just an empty result.
+        // Search 404s carry no information beyond an empty result.
         if (err instanceof OnebusawaySDK.NotFoundError) return { routes: [], limitExceeded: false };
         classifyError(err, 'search/route', params.query);
       }
@@ -687,7 +729,7 @@ export class OneBusAwayService {
   ): Promise<T> {
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.arrivalAndDeparture.list(params.stopId, {
+        const resp = await this.client.arrivalAndDeparture.list(encodeOneBusAwayId(params.stopId), {
           ...(params.minutesBefore != null && { minutesBefore: params.minutesBefore }),
           ...(params.minutesAfter != null && { minutesAfter: params.minutesAfter }),
         });
@@ -729,8 +771,7 @@ export class OneBusAwayService {
   /**
    * Stop details, arrivals, and full alert detail from the single arrivals
    * request — its references already carry the queried stop and every referenced
-   * situation. The stop drops `routeIds`: the references copy lists only the routes
-   * relevant to this response, not every route serving the stop.
+   * situation. Arrivals references only cover routes relevant to that response.
    */
   getStopContext(params: ArrivalsParams, ctx: Context): Promise<StopContextResult> {
     ctx.log.debug('getStopContext', { stopId: params.stopId });
@@ -738,14 +779,9 @@ export class OneBusAwayService {
       const stopRef = data.references.stops.find((s) => s.id === params.stopId);
       const arrivals = mapArrivals(data);
       const { situations, unresolvedIds } = collectSituations(data, arrivals);
-      let stop: StopSummary | null = null;
-      if (stopRef) {
-        const { routeIds: _served, ...summary } = normalizeStop(stopRef);
-        stop = summary;
-      }
 
       return {
-        stop,
+        stop: stopRef ? normalizeStopSummary(stopRef) : null,
         currentTime,
         timezone: agencyTimezone(data.references, stopAgencyId(params.stopId)),
         arrivals,
@@ -764,7 +800,7 @@ export class OneBusAwayService {
     ctx.log.debug('getTrip', { tripId: params.tripId });
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.tripDetails.retrieve(params.tripId, {
+        const resp = await this.client.tripDetails.retrieve(encodeOneBusAwayId(params.tripId), {
           ...(params.serviceDate != null && { serviceDate: params.serviceDate }),
           includeSchedule: params.includeSchedule ?? true,
         });
@@ -780,6 +816,7 @@ export class OneBusAwayService {
         const stopMap = new Map(refs.stops.map((s) => [s.id, s]));
 
         const status = entry.status;
+        const activeTripId = status?.activeTripId || null;
         const schedule = entry.schedule?.stopTimes
           ? entry.schedule.stopTimes.map((st) => {
               const stop = stopMap.get(st.stopId ?? '');
@@ -804,6 +841,8 @@ export class OneBusAwayService {
           tripHeadsign: tripRef?.tripHeadsign ?? '',
           blockId: tripRef?.blockId || null,
           status: {
+            activeTripId,
+            blockTripSequence: activeTripId ? (status?.blockTripSequence ?? null) : null,
             phase: status?.phase ?? 'unknown',
             predicted: status?.predicted ?? false,
             position:
@@ -840,7 +879,7 @@ export class OneBusAwayService {
     ctx.log.debug('getVehicles', { agencyId: params.agencyId });
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.vehiclesForAgency.list(params.agencyId);
+        const resp = await this.client.vehiclesForAgency.list(encodeOneBusAwayId(params.agencyId));
         if (!resp?.data)
           throw notFound(
             `agency "${params.agencyId}" not found.`,
@@ -910,7 +949,7 @@ export class OneBusAwayService {
     ctx.log.debug('getScheduleForStop', { stopId: params.stopId });
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.scheduleForStop.retrieve(params.stopId, {
+        const resp = await this.client.scheduleForStop.retrieve(encodeOneBusAwayId(params.stopId), {
           ...(params.date && { date: params.date }),
         });
         if (!resp?.data)
@@ -1003,9 +1042,12 @@ export class OneBusAwayService {
     ctx.log.debug('getScheduleForRoute', { routeId: params.routeId });
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.scheduleForRoute.retrieve(params.routeId, {
-          ...(params.date && { date: params.date }),
-        });
+        const resp = await this.client.scheduleForRoute.retrieve(
+          encodeOneBusAwayId(params.routeId),
+          {
+            ...(params.date && { date: params.date }),
+          },
+        );
         if (!resp?.data)
           throw notFound(
             `route "${params.routeId}" not found.`,
@@ -1139,7 +1181,7 @@ export class OneBusAwayService {
         const resp = await this.client.get<
           unknown,
           { data: { entry: RawSituation; references?: TimezoneReferences } }
-        >(`/api/where/situation/${situationId}.json`);
+        >(`/api/where/situation/${encodeOneBusAwayId(situationId)}.json`);
 
         if (!resp?.data)
           throw notFound(
@@ -1166,7 +1208,7 @@ export class OneBusAwayService {
     ctx.log.debug('getBlock', { blockId });
     return this.paced(ctx, async () => {
       try {
-        const resp = await this.client.block.retrieve(blockId);
+        const resp = await this.client.block.retrieve(encodeOneBusAwayId(blockId));
         if (!resp?.data)
           throw notFound(`block "${blockId}" not found.`, notFoundData(blockId, 'block_not_found'));
         const entry = resp.data.entry;
@@ -1241,7 +1283,7 @@ export class OneBusAwayService {
 
 let _service: OneBusAwayService | undefined;
 
-export function initOneBusAwayService(config: ServerConfig): void {
+export function initOneBusAwayService(config: ServiceConfig): void {
   _service = new OneBusAwayService(config);
 }
 

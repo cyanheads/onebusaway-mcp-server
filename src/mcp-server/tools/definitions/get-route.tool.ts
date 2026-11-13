@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { orNone } from '@/mcp-server/tools/format-helpers.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const getRoute = tool('onebusaway_get_route', {
@@ -14,12 +15,9 @@ export const getRoute = tool('onebusaway_get_route', {
     'Fetch details for a specific route by ID. Returns short name, description, agency, route type, and schedule URL. Route IDs use agency-prefixed format: {agencyId}_{localId} (e.g. "1_100259").',
   annotations: { readOnlyHint: true },
   input: z.object({
-    routeId: z
-      .string()
-      .min(1)
-      .describe(
-        'Agency-prefixed route ID (e.g. "1_100259"). Use onebusaway_find_routes or onebusaway_search_routes to discover IDs.',
-      ),
+    routeId: oneBusAwayIdSchema.describe(
+      'Raw agency-prefixed route ID (e.g. "1_100259"). Use onebusaway_find_routes or onebusaway_list_routes_for_agency to discover IDs.',
+    ),
   }),
   output: z.object({
     id: z.string().describe('Agency-prefixed route ID.'),
@@ -40,7 +38,7 @@ export const getRoute = tool('onebusaway_get_route', {
       code: JsonRpcErrorCode.NotFound,
       when: 'Route ID does not exist on this instance.',
       recovery:
-        'Search for the route with onebusaway_find_routes or onebusaway_search_routes to get a valid ID.',
+        'Look up the route with onebusaway_find_routes or onebusaway_list_routes_for_agency to get a valid ID.',
       thrownBy: 'service',
     },
     {

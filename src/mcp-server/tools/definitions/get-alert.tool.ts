@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { alertDetailShape, renderAlertDetail } from '@/mcp-server/tools/alert-shared.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const getAlert = tool('onebusaway_get_alert', {
@@ -14,12 +15,9 @@ export const getAlert = tool('onebusaway_get_alert', {
     'Fetch full detail for a service alert (situation) by ID. Returns the summary, description, reason (e.g. detour, construction), affected stops and routes, consequence description, and active time windows. Situation IDs appear in onebusaway_get_arrivals responses under situationIds and situations[].id.',
   annotations: { readOnlyHint: true },
   input: z.object({
-    situationId: z
-      .string()
-      .min(1)
-      .describe(
-        'Situation/alert ID from onebusaway_get_arrivals (situations[].id or arrivals[].situationIds[]).',
-      ),
+    situationId: oneBusAwayIdSchema.describe(
+      'Situation/alert ID from onebusaway_get_arrivals (situations[].id or arrivals[].situationIds[]).',
+    ),
   }),
   output: z.object(alertDetailShape),
   errors: [

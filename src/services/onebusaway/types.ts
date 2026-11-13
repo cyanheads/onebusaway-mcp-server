@@ -28,6 +28,13 @@ export interface Agency {
 
 // --- Stop ---
 
+/** Reference-backed route metadata for a stop. */
+export interface StopRoute {
+  agencyId: string;
+  id: string;
+  shortName: string;
+}
+
 export interface Stop {
   code: string;
   direction: string;
@@ -36,6 +43,7 @@ export interface Stop {
   lon: number;
   name: string;
   routeIds: string[];
+  routes: StopRoute[];
   wheelchairBoarding: 'ACCESSIBLE' | 'NOT_ACCESSIBLE' | 'UNKNOWN';
 }
 
@@ -175,7 +183,7 @@ export interface ArrivalsResult {
 // --- Stop context ---
 
 /** Stop details as an arrivals response's references carry them — without the served-route list. */
-export type StopSummary = Omit<Stop, 'routeIds'>;
+export type StopSummary = Omit<Stop, 'routeIds' | 'routes'>;
 
 export interface StopContextResult {
   alerts: SituationDetail[];
@@ -198,6 +206,8 @@ export interface TripScheduleStop {
 }
 
 export interface TripStatus {
+  activeTripId: string | null;
+  blockTripSequence: number | null;
   closestStop: string | null;
   lastUpdateTime: number;
   nextStop: string | null;

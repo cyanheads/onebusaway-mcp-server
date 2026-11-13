@@ -4,7 +4,7 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
 import { getStop } from '@/mcp-server/tools/definitions/get-stop.tool.js';
@@ -37,12 +37,33 @@ const STOP_FIXTURE = {
   lon: -122.3146,
   direction: 'N',
   routeIds: ['1_100259', '1_100262'],
+  routes: [{ id: '1_100259', shortName: '44', agencyId: '1' }],
   wheelchairBoarding: 'ACCESSIBLE' as const,
 };
 
 // ---- findStops ----
 
 describe('findStops', () => {
+  it('reports the applied radius and retains the cap on an empty result', async () => {
+    mockService.findStops.mockResolvedValue({ stops: [], limitExceeded: false });
+    const result = await runToolContract(findStops, {
+      lat: 47.6,
+      lon: -122.3,
+      radius: 1601,
+    } as never);
+    expect(mockService.findStops).toHaveBeenCalledWith(
+      { lat: 47.6, lon: -122.3, radius: 1600 },
+      expect.anything(),
+    );
+    expect(result.structuredContent).toMatchObject({
+      notice: expect.stringContaining('radius was reduced from 1601 to 1600.'),
+    });
+    expect(result.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ text: expect.stringContaining('within 1600m') }),
+      ]),
+    );
+  });
   it('returns nearby stops with limitExceeded', async () => {
     const ctx = createToolContext(findStops);
     mockService.findStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
@@ -146,6 +167,21 @@ describe('findStops', () => {
 // ---- getStop ----
 
 describe('getStop', () => {
+  it('preserves available route summaries and every route ID with blank code and direction', async () => {
+    mockService.getStop.mockResolvedValue({ ...STOP_FIXTURE, code: '', direction: '' });
+    const result = await runToolContract(getStop, { stopId: '1_75403' });
+    expect(result.structuredContent).toMatchObject({
+      routeIds: ['1_100259', '1_100262'],
+      routes: [{ id: '1_100259', shortName: '44', agencyId: '1' }],
+      code: '',
+      direction: '',
+    });
+    const text = (result.content[0] as { text: string }).text;
+    expect(text).toContain('**Code:** none');
+    expect(text).toContain('**Direction:** none');
+    expect(text).toContain('44 (ID: 1_100259, agency: 1)');
+    expect(text).toContain('1_100262');
+  });
   it('returns stop details', async () => {
     const ctx = createToolContext(getStop);
     mockService.getStop.mockResolvedValue(STOP_FIXTURE);
@@ -202,6 +238,41 @@ describe('getStop', () => {
 // ---- searchStops ----
 
 describe('searchStops', () => {
+  it('reports an ambiguous empty result and gives the stop-code lookup path', async () => {
+    mockService.searchStops.mockResolvedValue({ stops: [], limitExceeded: false });
+    const result = await runToolContract(searchStops, { query: '75403' } as never);
+    expect(result.structuredContent).toMatchObject({
+      stops: [],
+      notice: expect.stringContaining('Name search may be unavailable'),
+    });
+    expect(result.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: expect.stringContaining(
+            'onebusaway_find_stops with coordinates and the stop code as query',
+          ),
+        }),
+      ]),
+    );
+  });
+
+  it('dispatches an over-cap count at 3500 with refinement guidance', async () => {
+    mockService.searchStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: true });
+    const result = await runToolContract(searchStops, { query: 'University', maxCount: 3501 });
+    expect(mockService.searchStops).toHaveBeenCalledWith(
+      { query: 'University', maxCount: 3500 },
+      expect.anything(),
+    );
+    expect(result.structuredContent).toMatchObject({
+      limitExceeded: true,
+      truncated: true,
+      cap: 3500,
+      notice: expect.stringContaining('maxCount was reduced from 3501 to 3500.'),
+    });
+    const text = result.content.map((block) => ('text' in block ? block.text : '')).join('\n');
+    expect(text).toContain('Refine the query');
+    expect(text).not.toMatch(/raise maxCount/i);
+  });
   it('returns matching stops with limitExceeded flag', async () => {
     const ctx = createToolContext(searchStops);
     mockService.searchStops.mockResolvedValue({ stops: [STOP_FIXTURE], limitExceeded: false });
@@ -262,6 +333,8 @@ describe('searchStops', () => {
       searchStops.format!({ stops: [STOP_FIXTURE], limitExceeded: false })[0] as { text: string }
     ).text;
     expect(text).toContain('1_75403');
+    expect(text).toContain('44 (ID: 1_100259, agency: 1)');
+    expect(text).toContain('1_100262');
   });
 
   it('shows truncation notice in format when limitExceeded', () => {

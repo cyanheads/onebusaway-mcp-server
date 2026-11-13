@@ -3,10 +3,10 @@
  * @module tests/tools/arrivals.tool.test
  */
 
-import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
-import { expectContentParity } from './format-parity.helper.js';
+import { contentText, expectContentParity } from './format-parity.helper.js';
 import { createToolContext } from './tool-context.helper.js';
 
 vi.mock('@/services/onebusaway/onebusaway-service.js', () => ({
@@ -49,6 +49,49 @@ const ARRIVALS_RESULT = {
 };
 
 describe('getArrivals', () => {
+  it('reports zero stop arrival deviation separately from the current vehicle deviation', async () => {
+    const arrival = {
+      ...ARRIVALS_RESULT.arrivals[0]!,
+      predictedArrivalTime: NOW_MS + 120_000,
+      scheduleDeviation: -207,
+      stopsAway: -3,
+    };
+    mockService.getArrivals.mockResolvedValue({ ...ARRIVALS_RESULT, arrivals: [arrival] });
+    const result = await runToolContract(getArrivals, { stopId: '1_75403' } as never);
+    expect(result.structuredContent).toMatchObject({ arrivals: [arrival] });
+    const text = contentText(result.content);
+    expect(text).toContain('**Predicted arrival deviation:** on time (0s)');
+    expect(text).toContain('**Current vehicle deviation:** 3 min early (-207s)');
+    expect(text).toContain('**Block stop sequence offset:** -3');
+    expectContentParity(result.content, arrival);
+  });
+
+  it('clamps both arrival windows and reports applied values in the empty result', async () => {
+    mockService.getArrivals.mockResolvedValue({ ...ARRIVALS_RESULT, arrivals: [] });
+    const result = await runToolContract(getArrivals, {
+      stopId: '1_75403',
+      minutesBefore: 61,
+      minutesAfter: 241,
+    });
+    expect(mockService.getArrivals).toHaveBeenCalledWith(
+      { stopId: '1_75403', minutesBefore: 60, minutesAfter: 240 },
+      expect.anything(),
+    );
+    expect(result.structuredContent).toMatchObject({
+      arrivals: [],
+      windowMinutes: { before: 60, after: 240 },
+      notice: expect.stringContaining(
+        'minutesBefore was reduced from 61 to 60. minutesAfter was reduced from 241 to 240.',
+      ),
+    });
+    const text = contentText(result.content);
+    expect(text).toContain(
+      'minutesBefore was reduced from 61 to 60. minutesAfter was reduced from 241 to 240.',
+    );
+    expect(text).toContain('onebusaway_get_schedule_for_stop');
+    expect(text).not.toMatch(/increase minutesAfter/i);
+  });
+
   it('returns arrivals result from service', async () => {
     const ctx = createToolContext(getArrivals);
     mockService.getArrivals.mockResolvedValue(ARRIVALS_RESULT);
@@ -184,6 +227,7 @@ describe('getArrivals', () => {
     };
     const text = (getArrivals.format!(scheduledOnly)[0] as { text: string }).text;
     expect(text).toContain('scheduled');
+    expect(text).toContain('**Predicted:** none');
     // Absent vehicle data is explicit, so a content-only client sees "no vehicle".
     expect(text).toContain('**Vehicle:** none');
     expect(text).toContain('**Vehicle position:** none');

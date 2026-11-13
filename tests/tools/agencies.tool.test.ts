@@ -160,6 +160,8 @@ describe('listAgencies', () => {
     const text = (content[0] as { text: string }).text;
     // toFixed(4)/toFixed(3) would have rounded the center and span.
     expect(text).toContain('47.606211');
+    expect(text).toContain('**Coverage span (full width):**');
+    expect(text).not.toContain('±');
     expect(text).toContain('-122.332107');
     expect(text).toContain('0.512345');
     expect(text).toContain('0.834567');

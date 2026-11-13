@@ -3,8 +3,8 @@
 **Server:** onebusaway-mcp-server
 **Version:** 0.3.0
 **Package:** [@cyanheads/onebusaway-mcp-server](https://www.npmjs.com/package/@cyanheads/onebusaway-mcp-server)
-**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.18`
-**Engines:** Bun ≥1.4.0, Node ≥24.0.0
+**Framework:** [@cyanheads/mcp-ts-core](https://www.npmjs.com/package/@cyanheads/mcp-ts-core) `^0.13.22`
+**Engines:** Bun ≥1.4.4, Node ≥24.0.0
 **MCP SDK:** `@modelcontextprotocol/server` ^2.4.0
 **Zod:** ^4.6.7
 
@@ -38,6 +38,8 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 - **Use `ctx.state`** for tenant-scoped storage. Never access persistence directly.
 - **Need input the caller didn't supply?** `return ctx.requestInput(...)` and read `ctx.inputs` when the handler is re-entered. Never `await` for user input mid-handler.
 - **Secrets in env vars only** — never hardcoded.
+- **Validate raw path IDs with `oneBusAwayIdSchema`.** Use it on tool and resource inputs that reach upstream paths. The service validates and encodes those IDs with `encodeOneBusAwayId`. Exact local selectors stay raw.
+- **Apply read caps before the upstream call.** Use `readLimit` for schema/defaults and `applyReadLimit` for the requested/applied notice, warning, and metric. Strict mode sets schema maxima at startup with `ONEBUSAWAY_CLAMP_LIMITS=false`.
 - **Cut noise.** Add only what earns its place: no speculative generality, no guards for states the framework already prevents (Zod-validated params, classified errors), no abstraction until a third caller proves it, no option nothing sets.
 - **Close the loop on issues.** When implementing work tracked by a GitHub issue, comment on the issue with what landed and close it. Do both — a comment without a close leaves stale issues open; a close without a comment leaves no record of what shipped. The comment is for future readers — state the concrete changes, not the conversation that produced them.
 
@@ -50,6 +52,7 @@ Tailor suggestions to what's actually missing or stale — don't recite the full
 ```ts
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const getStop = tool('onebusaway_get_stop', {
@@ -57,7 +60,7 @@ export const getStop = tool('onebusaway_get_stop', {
   description: 'Fetch details for a specific stop by ID.',
   annotations: { readOnlyHint: true },
   input: z.object({
-    stopId: z.string().min(1).describe('Agency-prefixed stop ID (e.g. "1_75403").'),
+    stopId: oneBusAwayIdSchema.describe('Raw agency-prefixed stop ID (e.g. "1_75403").'),
   }),
   output: z.object({
     id: z.string().describe('Agency-prefixed stop ID.'),
@@ -94,13 +97,14 @@ export const getStop = tool('onebusaway_get_stop', {
 
 ```ts
 import { resource, z } from '@cyanheads/mcp-ts-core';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const stopResource = resource('onebusaway://stop/{stopId}', {
   name: 'onebusaway-stop',
   description: 'Stop metadata — name, coordinates, served routes, and wheelchair accessibility.',
   mimeType: 'application/json',
-  params: z.object({ stopId: z.string().describe('Agency-prefixed stop ID.') }),
+  params: z.object({ stopId: oneBusAwayIdSchema.describe('Raw agency-prefixed stop ID.') }),
   async handler(params, ctx) {
     return getOneBusAwayService().getStop(params.stopId, ctx);
   },
@@ -115,6 +119,7 @@ import { z } from '@cyanheads/mcp-ts-core';
 import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 
 const ServerConfigSchema = z.object({
+  clampLimits: z.stringbool().default(true).describe('Clamp over-limit read inputs to their caps.'),
   apiKey: z.string().default('TEST').describe('OneBusAway API key.'),
   baseUrl: z.string().default('https://api.pugetsound.onebusaway.org').describe('Base URL.'),
 });
@@ -122,6 +127,7 @@ const ServerConfigSchema = z.object({
 let _config: z.infer<typeof ServerConfigSchema> | undefined;
 export function getServerConfig() {
   _config ??= parseEnvConfig(ServerConfigSchema, {
+    clampLimits: 'ONEBUSAWAY_CLAMP_LIMITS',
     apiKey: 'ONEBUSAWAY_API_KEY',
     baseUrl: 'ONEBUSAWAY_BASE_URL',
   });
@@ -237,9 +243,10 @@ See framework CLAUDE.md and the `api-errors` skill for the full auto-classificat
 src/
   index.ts                              # createApp() entry point — registers tools/resources, inits service
   config/
-    server-config.ts                    # ONEBUSAWAY_API_KEY, ONEBUSAWAY_BASE_URL, ONEBUSAWAY_RATE_LIMIT_* (Zod schema)
+    server-config.ts                    # OneBusAway instance, rate budget, and read limit configuration
   services/
     onebusaway/
+      identifier.ts                     # Raw upstream path ID validation and encoding
       onebusaway-service.ts             # OneBusAway service — wraps onebusaway-sdk, paces upstream calls, error classification
       types.ts                          # Domain types (Stop, Route, Arrival, Vehicle, etc.)
   mcp-server/
@@ -247,6 +254,7 @@ src/
       arrivals-shared.ts                # Arrivals input schema, arrival shape + renderer (get_arrivals, get_stop_context)
       alert-shared.ts                   # Full alert shape + renderer (get_alert, get_stop_context)
       format-helpers.ts                 # content[] rendering helpers (exact numbers, explicit "none")
+      read-limits.ts                    # Read caps, strict schemas, and clamp reporting
     tools/definitions/
       list-agencies.tool.ts             # onebusaway_list_agencies
       find-stops.tool.ts                # onebusaway_find_stops
@@ -356,7 +364,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 | `bun run audit:fix` | `bun audit fix` — upgrade vulnerable packages to the lowest safe version within existing ranges (`--dry-run` previews, `--latest` rewrites ranges). First response when `devcheck` flags a transitive advisory; then `bun update <name>`, then `bun dedupe` |
 | `bun run audit:refresh` | Delete `bun.lock` and reinstall. Last resort after `audit:fix`, `bun update <name>`, and `bun dedupe` — re-resolves every ranged dep (the framework pin included) and rewrites the lockfile as `lockfileVersion: 2` |
 | `bun run lint:mcp` | Run the MCP definition linter standalone (rule catalog: `api-linter` skill) |
-| `bun run lint:packaging` | Packaging surface checks — `server.json`/`manifest.json` env-var parity (run by devcheck) |
+| `bun run lint:packaging` | Packaging surface checks — `server.json`/`manifest.json` env-var parity, `.mcpbignore` coverage, plugin manifests, and published skills (run by devcheck) |
 | `bun run list-skills` | Print the skill registry |
 | `bun run tree` | Generate directory structure doc |
 | `bun run format` | Auto-fix formatting (safe fixes only) |
@@ -376,7 +384,7 @@ When you complete a skill's checklist, check the boxes and add a completion time
 
 ## Bundling
 
-`bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. The pack step is followed by `scripts/clean-mcpb.ts`, which prunes dev dependencies (`mcpb clean`) and strips two classes of `node_modules/**` content that root-anchored `.mcpbignore` patterns cannot reach: dependency-shipped agent docs (`framework-skills/`, `skills/`, `.claude/`, `.agents/`, `SKILL.md`) and platform-specific native bindings, which would otherwise lock the bundle to the platform it was packed on. A server using DataCanvas therefore ships a portable bundle without the DuckDB native — `@duckdb/node-api` is an optional peer loaded lazily, so canvas tools report an actionable install hint and every other tool works normally. MCPB is stdio-only — HTTP and Cloudflare Workers deployments are unaffected. Consumers who don't need it can delete `manifest.json` and `.mcpbignore`; `lint:packaging` skips cleanly.
+`bun run bundle` produces a `.mcpb` extension bundle for one-click install in Claude Desktop. The packer reads `.mcpbignore`. Anchor project exclusions at the root (`/docs/`) and keep the published root `skills/` in the bundle. After packing, `scripts/clean-mcpb.ts` removes development dependencies, build-only files, platform-specific native bindings, and agent documentation in dependencies. It strips `skills/` at dependency package roots and keeps nested runtime modules such as the SDK's `dist/ext/skills/`. MCPB runs over stdio.
 
 **Adding an env var requires both files:** `server.json` (registry discovery, `environmentVariables[]`) and `manifest.json` (bundle install UX, `mcp_config.env` + `user_config`). `lint:packaging` (run by `devcheck`) verifies the env var names match, that every `user_config` option is wired into `mcp_config.env` as `"X": "${user_config.X}"` (the host substitutes nothing else — `"${X}"` reaches the server as that literal string), and that an optional string option carries `"default": ""`.
 

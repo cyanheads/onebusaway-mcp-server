@@ -3,6 +3,7 @@
  * @module tests/tools/security.tool.test
  */
 
+import { runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { findStops } from '@/mcp-server/tools/definitions/find-stops.tool.js';
@@ -10,6 +11,8 @@ import { getAlert } from '@/mcp-server/tools/definitions/get-alert.tool.js';
 import { getArrivals } from '@/mcp-server/tools/definitions/get-arrivals.tool.js';
 import { getBlock } from '@/mcp-server/tools/definitions/get-block.tool.js';
 import { getRoute } from '@/mcp-server/tools/definitions/get-route.tool.js';
+import { getScheduleForRoute } from '@/mcp-server/tools/definitions/get-schedule-for-route.tool.js';
+import { getScheduleForStop } from '@/mcp-server/tools/definitions/get-schedule-for-stop.tool.js';
 import { getStop } from '@/mcp-server/tools/definitions/get-stop.tool.js';
 import { getStopContext } from '@/mcp-server/tools/definitions/get-stop-context.tool.js';
 import { getTrip } from '@/mcp-server/tools/definitions/get-trip.tool.js';
@@ -71,6 +74,7 @@ function makeStopResult(id: string) {
     lon: -122.3146,
     direction: 'N',
     routeIds: [],
+    routes: [],
     wheelchairBoarding: 'UNKNOWN' as const,
   };
 }
@@ -143,7 +147,7 @@ describe('searchStops security', () => {
 // ---- getStop security ----
 
 describe('getStop security', () => {
-  it.each(["'; DROP TABLE --", '../../etc/passwd', '\x00null\x00'])(
+  it.each(["'; DROP TABLE --"])(
     'stopId with injection chars "%s" passes schema and does not crash',
     async (payload) => {
       const ctx = createToolContext(getStop);
@@ -158,6 +162,31 @@ describe('getStop security', () => {
     const text = (getStop.format!(stop)[0] as { text: string }).text;
     expect(text).not.toContain('secret-api-key-12345');
   });
+});
+
+it.each([
+  [getStop, 'stopId'],
+  [getArrivals, 'stopId'],
+  [getStopContext, 'stopId'],
+  [getRoute, 'routeId'],
+  [getTrip, 'tripId'],
+  [getBlock, 'blockId'],
+  [getAlert, 'situationId'],
+  [listRoutesForAgency, 'agencyId'],
+  [getVehicles, 'agencyId'],
+  [getScheduleForStop, 'stopId'],
+  [getScheduleForRoute, 'routeId'],
+] as const)('$0.name rejects non-raw path IDs before dispatch', async (definition, field) => {
+  const result = await runToolContract(
+    definition as Parameters<typeof runToolContract>[0],
+    {
+      [field]: '1_%31',
+    } as never,
+  );
+  expect(result.structuredContent).toMatchObject({
+    error: { code: -32602, data: { reason: 'invalid_arguments' } },
+  });
+  expect(getOneBusAwayService).not.toHaveBeenCalled();
 });
 
 // ---- getArrivals security ----
@@ -307,6 +336,8 @@ describe('getTrip security', () => {
       tripHeadsign: 'Downtown Seattle',
       blockId: null,
       status: {
+        activeTripId: 'trip_abc',
+        blockTripSequence: 0,
         phase: 'in_progress',
         predicted: true,
         position: null,
@@ -327,7 +358,7 @@ describe('getTrip security', () => {
 // ---- getStopContext security ----
 
 describe('getStopContext security', () => {
-  it.each(["'; DROP TABLE --", '../../etc/passwd', '\x00null\x00'])(
+  it.each(["'; DROP TABLE --"])(
     'stopId with injection chars "%s" passes schema and reaches the service verbatim',
     async (payload) => {
       const ctx = createToolContext(getStopContext);

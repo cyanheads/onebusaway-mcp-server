@@ -36,6 +36,13 @@
           "default": "https://api.pugetsound.onebusaway.org"
         },
         {
+          "name": "ONEBUSAWAY_CLAMP_LIMITS",
+          "description": "Reduce over-limit search counts, radii, and arrival windows to their caps. Set false to reject them.",
+          "format": "string",
+          "isRequired": false,
+          "default": "true"
+        },
+        {
           "name": "ONEBUSAWAY_RATE_LIMIT_REQUESTS",
           "description": "Upstream requests the pacer allows per window.",
           "format": "string",
@@ -94,6 +101,13 @@
           "format": "string",
           "isRequired": false,
           "default": "https://api.pugetsound.onebusaway.org"
+        },
+        {
+          "name": "ONEBUSAWAY_CLAMP_LIMITS",
+          "description": "Reduce over-limit search counts, radii, and arrival windows to their caps. Set false to reject them.",
+          "format": "string",
+          "isRequired": false,
+          "default": "true"
         },
         {
           "name": "ONEBUSAWAY_RATE_LIMIT_REQUESTS",

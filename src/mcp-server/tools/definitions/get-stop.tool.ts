@@ -5,7 +5,8 @@
 
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
-import { coords } from '@/mcp-server/tools/format-helpers.js';
+import { renderStop, stopRoutesSchema } from '@/mcp-server/tools/stop-shared.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const getStop = tool('onebusaway_get_stop', {
@@ -14,12 +15,9 @@ export const getStop = tool('onebusaway_get_stop', {
     'Fetch details for a specific stop by ID. Returns the stop\'s name, coordinates, direction, served routes, and wheelchair accessibility. Stop IDs use agency-prefixed format: {agencyId}_{localId} (e.g. "1_75403" for Metro Transit stop 75403).',
   annotations: { readOnlyHint: true },
   input: z.object({
-    stopId: z
-      .string()
-      .min(1)
-      .describe(
-        'Agency-prefixed stop ID (e.g. "1_75403" for Metro Transit stop 75403, "40_100239" for Sound Transit). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
-      ),
+    stopId: oneBusAwayIdSchema.describe(
+      'Agency-prefixed stop ID (e.g. "1_75403" for Metro Transit stop 75403, "40_100239" for Sound Transit). Use onebusaway_find_stops or onebusaway_search_stops to discover IDs.',
+    ),
   }),
   output: z.object({
     id: z.string().describe('Agency-prefixed stop ID.'),
@@ -31,8 +29,9 @@ export const getStop = tool('onebusaway_get_stop', {
     routeIds: z
       .array(z.string())
       .describe(
-        'IDs of routes that serve this stop. Use with onebusaway_get_arrivals or onebusaway_get_schedule_for_stop.',
+        'IDs of all routes reported to serve this stop. Use with onebusaway_get_route or onebusaway_get_schedule_for_route.',
       ),
+    routes: stopRoutesSchema,
     wheelchairBoarding: z
       .enum(['ACCESSIBLE', 'NOT_ACCESSIBLE', 'UNKNOWN'])
       .describe('Wheelchair boarding status.'),
@@ -63,15 +62,5 @@ export const getStop = tool('onebusaway_get_stop', {
     return stop;
   },
 
-  format: (result) => {
-    const lines: string[] = [
-      `## ${result.name}`,
-      `**ID:** ${result.id} | **Code:** ${result.code}`,
-      `**Direction:** ${result.direction}`,
-      `**Coordinates:** ${coords(result.lat, result.lon)}`,
-      `**Routes:** ${result.routeIds.join(', ') || 'none'}`,
-      `**Wheelchair:** ${result.wheelchairBoarding}`,
-    ];
-    return [{ type: 'text', text: lines.join('\n') }];
-  },
+  format: (result) => [{ type: 'text', text: renderStop(result).join('\n') }],
 });

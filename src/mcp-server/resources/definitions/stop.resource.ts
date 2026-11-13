@@ -4,18 +4,21 @@
  */
 
 import { resource, z } from '@cyanheads/mcp-ts-core';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
+
+const title = 'OneBusAway Stop';
 
 export const stopResource = resource('onebusaway://stop/{stopId}', {
   name: 'onebusaway-stop',
-  title: 'OneBusAway Stop',
+  title,
   description:
-    'Stop metadata — name, coordinates, served routes, and wheelchair accessibility. Stop IDs use agency-prefixed format: {agencyId}_{localId} (e.g. "1_75403").',
+    'Stop metadata including name, coordinates, served route IDs, available route summaries, and wheelchair accessibility. Use a raw agency-prefixed stop ID (e.g. "1_75403").',
   mimeType: 'application/json',
   params: z.object({
-    stopId: z
-      .string()
-      .describe('Agency-prefixed stop ID (e.g. "1_75403" for Metro Transit stop 75403).'),
+    stopId: oneBusAwayIdSchema.describe(
+      'Agency-prefixed stop ID (e.g. "1_75403" for Metro Transit stop 75403).',
+    ),
   }),
 
   async handler(params, ctx) {
@@ -29,6 +32,7 @@ export const stopResource = resource('onebusaway://stop/{stopId}', {
       {
         uri: 'onebusaway://stop/1_75403',
         name: 'Example: Metro Transit Stop 75403',
+        title,
         mimeType: 'application/json',
         description: 'Stop metadata for Metro Transit stop 75403 (Puget Sound instance).',
       },

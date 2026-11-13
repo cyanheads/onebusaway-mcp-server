@@ -5,6 +5,8 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
+// Collect the module graph before timing cases; each case still resets its memoized config.
+import '@/config/server-config.js';
 
 /**
  * Loads a fresh copy of the config module under the given environment.
@@ -25,6 +27,23 @@ const RATE_LIMIT_VARS = {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe('read limit configuration', () => {
+  it.each([
+    [undefined, true],
+    ['', true],
+    ['true', true],
+    ['false', false],
+  ] as const)('parses ONEBUSAWAY_CLAMP_LIMITS=%s as %s', async (value, expected) => {
+    expect((await loadConfig({ ONEBUSAWAY_CLAMP_LIMITS: value })).clampLimits).toBe(expected);
+  });
+
+  it('names an invalid setting', async () => {
+    await expect(loadConfig({ ONEBUSAWAY_CLAMP_LIMITS: 'maybe' })).rejects.toThrow(
+      'ONEBUSAWAY_CLAMP_LIMITS',
+    );
+  });
 });
 
 describe('rate-limit pacing config (#25)', () => {

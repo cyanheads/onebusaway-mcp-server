@@ -3,7 +3,9 @@
  * @module tests/resources/onebusaway.resource.test
  */
 
+import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { createMockContext } from '@cyanheads/mcp-ts-core/testing';
+import { createWorkerHandler } from '@cyanheads/mcp-ts-core/worker';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { routeResource } from '@/mcp-server/resources/definitions/route.resource.js';
 import { stopResource } from '@/mcp-server/resources/definitions/stop.resource.js';
@@ -37,6 +39,7 @@ const STOP_FIXTURE = {
   lon: -122.3146,
   direction: 'N',
   routeIds: ['1_100259'],
+  routes: [{ id: '1_100259', shortName: '44', agencyId: '1' }],
   wheelchairBoarding: 'ACCESSIBLE' as const,
 };
 
@@ -51,6 +54,98 @@ const ROUTE_FIXTURE = {
   color: null,
   url: null,
 };
+
+it.each([
+  [stopResource, 'stopId'],
+  [routeResource, 'routeId'],
+] as const)('$0.name accepts raw opaque IDs and rejects escaped aliases', (definition, field) => {
+  expect(definition.params?.safeParse({ [field]: 'agency_山 1.2' }).success).toBe(true);
+  expect(definition.params?.safeParse({ [field]: '1_%31' }).success).toBe(false);
+});
+
+describe('resource reads through the SDK', () => {
+  async function read(uri: string) {
+    const server = createWorkerHandler({
+      resources: [stopResource, routeResource],
+      sessionMode: 'stateless',
+      decodeResourceParams: true,
+    });
+    const request = new Request('https://example.test/mcp', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json, text/event-stream',
+        'content-type': 'application/json',
+        'mcp-protocol-version': '2025-11-25',
+      },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'resources/read', params: { uri } }),
+    });
+    const response = await server.fetch(request, { MCP_AUTH_MODE: 'none' }, {} as never);
+    expect(response.status).toBe(200);
+    const data = (await response.text()).split('\n').find((line) => line.startsWith('data: '));
+    expect(data).toBeDefined();
+    return JSON.parse(data!.slice('data: '.length)) as unknown;
+  }
+
+  it.each(['Metro_Å. 3', 'Metro_%C3%85.%203'])(
+    'preserves the route resource URI segment %s',
+    async (segment) => {
+      mockService.getRoute.mockResolvedValue({ ...ROUTE_FIXTURE, id: 'Metro_Å. 3' });
+      const body = await read(`onebusaway://route/${segment}`);
+      expect(mockService.getRoute).toHaveBeenCalledWith('Metro_Å. 3', expect.anything());
+      expect(body).toMatchObject({
+        result: {
+          contents: [expect.objectContaining({ text: expect.stringContaining('Metro_Å. 3') })],
+        },
+      });
+    },
+  );
+
+  it('returns route summaries in the stop resource JSON', async () => {
+    mockService.getStop.mockResolvedValue(STOP_FIXTURE);
+    const body = await read('onebusaway://stop/1_7540%33');
+    expect(mockService.getStop).toHaveBeenCalledWith('1_75403', expect.anything());
+    expect(body).toMatchObject({
+      result: {
+        contents: [expect.objectContaining({ text: JSON.stringify(STOP_FIXTURE, null, 2) })],
+      },
+    });
+  });
+
+  it.each(['1_%2F', '1_%2531'])('rejects %s before dispatch', async (segment) => {
+    const body = await read(`onebusaway://stop/${segment}`);
+    expect(body).toMatchObject({ error: { code: JsonRpcErrorCode.ValidationError } });
+    expect(getOneBusAwayService).not.toHaveBeenCalled();
+  });
+});
+
+it('preserves the display titles of the concrete resource listings', async () => {
+  const server = createWorkerHandler({
+    resources: [stopResource, routeResource],
+    sessionMode: 'stateless',
+  });
+  const request = new Request('https://example.test/mcp', {
+    method: 'POST',
+    headers: {
+      accept: 'application/json, text/event-stream',
+      'content-type': 'application/json',
+      'mcp-protocol-version': '2025-11-25',
+    },
+    body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'resources/list' }),
+  });
+  const response = await server.fetch(request, { MCP_AUTH_MODE: 'none' }, {} as never);
+  expect(response.status).toBe(200);
+  const data = (await response.text()).split('\n').find((line) => line.startsWith('data: '));
+  expect(data).toBeDefined();
+  const body: unknown = JSON.parse(data!.slice('data: '.length));
+  expect(body).toMatchObject({
+    result: {
+      resources: expect.arrayContaining([
+        expect.objectContaining({ uri: 'onebusaway://stop/1_75403', title: 'OneBusAway Stop' }),
+        expect.objectContaining({ uri: 'onebusaway://route/1_100259', title: 'OneBusAway Route' }),
+      ]),
+    },
+  });
+});
 
 // ---- stopResource ----
 

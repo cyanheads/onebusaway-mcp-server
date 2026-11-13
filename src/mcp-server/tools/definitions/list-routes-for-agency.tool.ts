@@ -6,6 +6,7 @@
 import { tool, z } from '@cyanheads/mcp-ts-core';
 import { JsonRpcErrorCode } from '@cyanheads/mcp-ts-core/errors';
 import { orNone } from '@/mcp-server/tools/format-helpers.js';
+import { oneBusAwayIdSchema } from '@/services/onebusaway/identifier.js';
 import { getOneBusAwayService } from '@/services/onebusaway/onebusaway-service.js';
 
 export const listRoutesForAgency = tool('onebusaway_list_routes_for_agency', {
@@ -14,12 +15,9 @@ export const listRoutesForAgency = tool('onebusaway_list_routes_for_agency', {
     "List all routes operated by an agency. Returns route IDs, short names, and descriptions. Use to enumerate an agency's full service before searching for a specific route. Get agencyId values from onebusaway_list_agencies.",
   annotations: { readOnlyHint: true, openWorldHint: false },
   input: z.object({
-    agencyId: z
-      .string()
-      .min(1)
-      .describe(
-        'Agency ID (e.g. "1" for Metro Transit, "40" for Sound Transit). Use onebusaway_list_agencies to discover IDs.',
-      ),
+    agencyId: oneBusAwayIdSchema.describe(
+      'Agency ID (e.g. "1" for Metro Transit, "40" for Sound Transit). Use onebusaway_list_agencies to discover IDs.',
+    ),
   }),
   output: z.object({
     routes: z

@@ -7,7 +7,7 @@
 
 <div align="center">
 
-[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/onebusaway-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/onebusaway-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/onebusaway-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun->=1.4.0-blueviolet.svg?style=flat-square)](https://bun.sh/)
+[![Version](https://img.shields.io/badge/Version-0.3.0-blue.svg?style=flat-square)](./CHANGELOG.md) [![License](https://img.shields.io/badge/License-Apache%202.0-orange.svg?style=flat-square)](./LICENSE) [![Docker](https://img.shields.io/badge/Docker-ghcr.io-2496ED?style=flat-square&logo=docker&logoColor=white)](https://github.com/users/cyanheads/packages/container/package/onebusaway-mcp-server) [![MCP SDK](https://img.shields.io/badge/MCP%20SDK-^2.4.0-green.svg?style=flat-square)](https://modelcontextprotocol.io/) [![npm](https://img.shields.io/npm/v/@cyanheads/onebusaway-mcp-server?style=flat-square&logo=npm&logoColor=white)](https://www.npmjs.com/package/@cyanheads/onebusaway-mcp-server) [![TypeScript](https://img.shields.io/badge/TypeScript-^7.0.2-3178C6.svg?style=flat-square)](https://www.typescriptlang.org/) [![Bun](https://img.shields.io/badge/Bun->=1.4.4-blueviolet.svg?style=flat-square)](https://bun.sh/)
 
 </div>
 
@@ -37,7 +37,7 @@ Real-time transit from OneBusAway, set up for Puget Sound (King County Metro, So
 |:---|:---|
 | `onebusaway_list_agencies` | List the transit agencies on the instance, with IDs, contact info, and coverage area |
 | `onebusaway_find_stops` | Find stops near a lat/lon, optionally filtered by stop code |
-| `onebusaway_search_stops` | Resolve a stop name or code to a stop ID |
+| `onebusaway_search_stops` | Resolve a stop name to a stop ID |
 | `onebusaway_get_stop` | Fetch one stop by ID |
 | `onebusaway_find_routes` | Find routes near a lat/lon, optionally filtered by name or number |
 | `onebusaway_search_routes` | Resolve a route name or number to a route ID |
@@ -48,7 +48,7 @@ Real-time transit from OneBusAway, set up for Puget Sound (King County Metro, So
 | `onebusaway_get_alert` | Full service alert detail by situation ID |
 | `onebusaway_get_trip` | Real-time status and stop sequence for a trip |
 | `onebusaway_get_block` | Every trip one vehicle runs in a service day, in order, with stop times |
-| `onebusaway_get_vehicles` | Real-time positions of an agency's active vehicles, optionally for one route |
+| `onebusaway_get_vehicles` | Real-time positions in a vehicle agency's namespace, optionally filtered by route |
 | `onebusaway_get_schedule_for_stop` | Full-day departure schedule for a stop, by route and direction |
 | `onebusaway_get_schedule_for_route` | Full-day schedule for a route: every trip and its stop sequence |
 
@@ -65,51 +65,52 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 
 ### `onebusaway_list_agencies` <sub>tool</sub>
 
-- No input; returns every agency with `id`, contact info, `timezone`, and `coverageCenter` / `coverageSpan`
+- No input; returns agencies with IDs, contact info, timezones, coverage centers, and full coverage widths in degrees
 - `limitExceeded` flags an upstream-capped list, with no pagination to fetch the rest
 
 ---
 
 ### `onebusaway_find_stops` <sub>tool</sub>
 
-- `lat` / `lon` required; `radius` in meters, default 300, max 1600; optional `query` matches the stop code printed on the sign
-- Each stop carries `id`, `code`, `direction`, `routeIds`, and `wheelchairBoarding` (`ACCESSIBLE` / `NOT_ACCESSIBLE` / `UNKNOWN`); `limitExceeded` means more stops exist within the radius
+- `lat` and `lon` are required. The radius defaults to 300 m and caps at 1600 m. The optional `query` matches the stop code printed on the sign
+- Each stop carries `id`, `code`, `direction`, `wheelchairBoarding` (`ACCESSIBLE` / `NOT_ACCESSIBLE` / `UNKNOWN`), all `routeIds`, and `routes` with `id`, `shortName`, and `agencyId` where the response includes a matching reference
+- `limitExceeded` flags upstream truncation
 
 ---
 
 ### `onebusaway_search_stops` <sub>tool</sub>
 
-- `query` (stop name fragment or stop code) required; `maxCount` up to 100, default 10
+- `query` (stop name fragment) required; `maxCount` defaults to 10 and caps at 3500. For a code from a stop sign, use `onebusaway_find_stops` with the stop's approximate location and code as `query`
 - Same stop shape as `onebusaway_find_stops`; `limitExceeded` means more stops matched than `maxCount`
 
 ---
 
 ### `onebusaway_get_stop` <sub>tool</sub>
 
-- Single `stopId`; returns `name`, `code`, coordinates, `direction`, `routeIds`, and `wheelchairBoarding`
+- Single `stopId`; returns the same stop record as `onebusaway_find_stops`
 - Unknown IDs fail as `stop_not_found`, with recovery via `onebusaway_find_stops` or `onebusaway_search_stops`
 
 ---
 
 ### `onebusaway_find_routes` <sub>tool</sub>
 
-- `lat` / `lon` required; `radius` in meters, default 500, max 1600, or a `latSpan` + `lonSpan` box (both set) in its place; optional `query` by route name or number
+- `lat` and `lon` are required. The radius defaults to 500 m and caps at 1600 m. Set both `latSpan` and `lonSpan` for a box search and omit the radius. The optional `query` filters by route name or number
 - Each route carries `shortName`, `longName`, `agencyId`, GTFS `type` (0=tram … 5=cable_car), `color`, and schedule `url`; `limitExceeded` means more routes exist in the area
 
 ---
 
 ### `onebusaway_search_routes` <sub>tool</sub>
 
-- `query` (route name or number) required; `maxCount` up to 100, default 10
+- `query` (route name or number) required; `maxCount` defaults to 10 and caps at 6000
 - Returns `shortName`, `longName`, `agencyId`, and GTFS `type`; `limitExceeded` means more routes matched than `maxCount`
-- Fails as `endpoint_unavailable` on instances whose route-search endpoint returns 404, Puget Sound among them; use `onebusaway_find_routes` or `onebusaway_list_routes_for_agency` instead
+- Search can return an empty list for a known route. Use `onebusaway_find_routes` near the service area or `onebusaway_list_routes_for_agency` to check the agency's routes
 
 ---
 
 ### `onebusaway_get_route` <sub>tool</sub>
 
 - Single `routeId`; returns `shortName`, `longName`, `description`, agency, GTFS `type`, `color`, and schedule `url`
-- Unknown IDs fail as `route_not_found`, with recovery via `onebusaway_find_routes` or `onebusaway_search_routes`
+- Unknown IDs fail as `route_not_found`, with recovery via `onebusaway_find_routes` or `onebusaway_list_routes_for_agency`
 
 ---
 
@@ -122,8 +123,9 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 
 ### `onebusaway_get_arrivals` <sub>tool</sub>
 
-- `stopId` required; the window is `minutesBefore` (integer 0–60, default 5) / `minutesAfter` (integer 0–240, default 35), with longer horizons left to `onebusaway_get_schedule_for_stop`; unknown stops fail as `stop_not_found`
-- Each arrival carries `predicted` (false = schedule-only), `scheduleDeviation` in seconds (positive = late, meaningful only when predicted), `predictedArrivalTime`, `vehiclePosition`, `stopsAway`, and `tripId`
+- `stopId` is required. The window uses nonnegative integers for `minutesBefore` (default 5, cap 60) and `minutesAfter` (default 35, cap 240). For later departures, use `onebusaway_get_schedule_for_stop`
+- Compare `predictedArrivalTime` with `scheduledArrivalTime` for deviation at the stop. `scheduleDeviation` is the vehicle's current deviation in seconds, positive when late and meaningful when `predicted` is true
+- `stopsAway` is the queried stop's block sequence minus the vehicle's next stop block sequence. Zero can also mean unavailable
 - Active alerts arrive in `situations[]`: those on the stop itself plus those linked from each arrival's `situationIds`, each once
 
 ---
@@ -131,7 +133,7 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 ### `onebusaway_get_stop_context` <sub>tool</sub>
 
 - Same input as `onebusaway_get_arrivals`, and the same `stop_not_found` / `rate_limited` failures; one call issues one upstream request
-- Returns `stop` (the `onebusaway_get_stop` fields minus `routeIds`), `arrivals` in the `onebusaway_get_arrivals` shape, and `alerts` in the `onebusaway_get_alert` shape — every alert on the stop or on an arrival in the window, including stop-wide alerts no arrival in the window carries
+- Returns `stop` (the `onebusaway_get_stop` fields without `routeIds` and `routes`), `arrivals` in the `onebusaway_get_arrivals` shape, and `alerts` in the `onebusaway_get_alert` shape, including stop-wide alerts
 - When the upstream response omits the stop, `stop` is null; a referenced alert missing from the response is left out; either way a `notice` names the tool to fetch it with
 
 ---
@@ -146,7 +148,7 @@ The same data is available to tool-only clients through `onebusaway_get_stop` an
 ### `onebusaway_get_trip` <sub>tool</sub>
 
 - `tripId` required; `serviceDateMs` (non-negative integer, midnight local) only for a trip on a previous service day; `includeSchedule` (default true) adds the stop sequence with GTFS times and `distanceAlongTripMeters`
-- `status` carries `phase` (e.g. `in_progress`, `layover_before`), `predicted`, `position`, `scheduleDeviation`, and `nextStop`; `blockId` (null when the trip has none) feeds `onebusaway_get_block`
+- When present, `status.activeTripId` identifies the trip the live status describes, and `status.blockTripSequence` gives its sequence within the block when available. The top-level `tripId` and `schedule` refer to the requested trip. Use a non-null `blockId` with `onebusaway_get_block`
 - Fails as `trip_not_found` when the trip isn't active for the service date; a completed trip's times come from `onebusaway_get_schedule_for_route`
 
 ---
@@ -164,7 +166,7 @@ Example: `{"blockId":"<blockId from onebusaway_get_trip>","departureFromSec":864
 
 ### `onebusaway_get_vehicles` <sub>tool</sub>
 
-- `agencyId` required, unknown agencies fail as `agency_not_found`; optional `routeId` is filtered client-side after all of the agency's vehicles are fetched
+- `agencyId` is the vehicle ID's agency namespace. Use the prefix of a known `vehicleId` from an arrival or trip. A route's operating agency can differ. The optional `routeId` filters that namespace's results by exact route ID
 - Each vehicle carries `position`, `orientation`, `phase`, `scheduleDeviation`, `tripId`, `nextStop`, and `predicted` (reporting real-time GPS); `limitExceeded` flags an upstream-capped list with no pagination
 - `tripId` prefers the active trip; route and headsign metadata resolve only from that trip. `orientation` preserves counter-clockwise degrees from east (0=east, 90=north, 180=west, 270=south), not a compass bearing
 - Records missing latitude or longitude are skipped: `omittedWithoutPosition` counts them across the agency, and `omittedWithoutPositionOnRoute` counts resolved matches when filtering by route. These counts are independent of upstream truncation
@@ -210,7 +212,7 @@ Arrivals, stop context, trips, vehicles, schedules, and alerts include a validat
 ### `onebusaway://route/{routeId}` <sub>resource</sub>
 
 - Route record as `application/json`, the same shape `onebusaway_get_route` returns
-- `routeId` comes from `onebusaway_find_routes` or `onebusaway_search_routes`
+- `routeId` comes from `onebusaway_find_routes` or `onebusaway_list_routes_for_agency`
 
 ## Features
 
@@ -220,7 +222,7 @@ OneBusAway-specific:
 
 - Wraps [`onebusaway-sdk`](https://www.npmjs.com/package/onebusaway-sdk) with typed error classification (`NotFound`, `RateLimited`, `ValidationError` for an upstream 400, `ServiceUnavailable`)
 - Defaults to the Puget Sound instance (`api.pugetsound.onebusaway.org`), where `ONEBUSAWAY_API_KEY=TEST` works for development; `ONEBUSAWAY_BASE_URL` points it at any other OneBusAway instance
-- Stop and route IDs are agency-prefixed, `{agencyId}_{localId}` (stop `1_75403`, route `1_100259`); agency IDs are the bare prefix (`1` for Metro Transit, `40` for Sound Transit)
+- Stop and route IDs are agency-prefixed, `{agencyId}_{localId}` (stop `1_75403`, route `1_100259`). Pass raw IDs from the configured instance as tool arguments. Resource URIs accept URI encoding for their ID segment
 - One shared pacer, sized by `ONEBUSAWAY_RATE_LIMIT_*`, queues every upstream request against the API key's budget; a call that gets no slot within the wait cap fails as retryable `rate_limited` with `data.retryAfter`, on any tool
 - Transit data only, no trip planning; server-level instructions walk agents through the ID format and the common lookup chains
 
@@ -316,7 +318,7 @@ MCP_TRANSPORT_TYPE=http MCP_HTTP_PORT=3010 ONEBUSAWAY_API_KEY=TEST bun run start
 
 ### Prerequisites
 
-- [Bun v1.4.0](https://bun.sh/) or higher (or Node.js v24+).
+- [Bun v1.4.4](https://bun.sh/) or higher (or Node.js v24+).
 - A OneBusAway API key. `TEST` works on the Puget Sound instance for development; for production use or other instances, register at the relevant agency's developer portal.
 
 ### Installation
@@ -352,6 +354,7 @@ cp .env.example .env
 |:---|:---|:---|
 | `ONEBUSAWAY_API_KEY` | OneBusAway API key. `TEST` works on the Puget Sound instance. | `TEST` |
 | `ONEBUSAWAY_BASE_URL` | Base URL of the OneBusAway instance. | `https://api.pugetsound.onebusaway.org` |
+| `ONEBUSAWAY_CLAMP_LIMITS` | Apply the documented caps to over-limit search counts, radii, and arrival windows. Each reduction reports the requested and applied values. Set `false` to reject over-cap inputs. | `true` |
 | `ONEBUSAWAY_RATE_LIMIT_REQUESTS` | Upstream requests allowed per window, shared by all callers. | `20` |
 | `ONEBUSAWAY_RATE_LIMIT_WINDOW_MS` | Width of the sliding rate window, in ms. | `60000` |
 | `ONEBUSAWAY_RATE_LIMIT_MAX_WAIT_MS` | Longest a call waits for a slot before failing as `rate_limited`, in ms. Keep it under the SDK's 60 s request timeout. | `45000` |
@@ -360,7 +363,7 @@ cp .env.example .env
 | `MCP_SESSION_MODE` | HTTP session mode: `stateless`, `stateful`, or `auto`. | `stateless` |
 | `MCP_AUTH_MODE` | Authentication: `none`, `jwt`, or `oauth`. | `none` |
 | `MCP_LOG_LEVEL` | Log level (`debug`, `info`, `notice`, `warning`, `error`). | `info` |
-| `LOGS_DIR` | Directory for log files (Node.js only). | `<project-root>/logs` |
+| `LOGS_DIR` | Directory for log files. Relative paths resolve inside the server package. Use an absolute path to write elsewhere. | `<server-package>/logs` |
 | `STORAGE_PROVIDER_TYPE` | Storage backend: `in-memory`, `filesystem`, `supabase`, `cloudflare-kv/r2/d1`. | `in-memory` |
 | `OTEL_ENABLED` | Enable [OpenTelemetry](https://github.com/cyanheads/mcp-ts-core/tree/main/docs/telemetry). | `false` |
 

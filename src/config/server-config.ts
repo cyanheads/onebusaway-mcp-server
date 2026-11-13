@@ -9,6 +9,7 @@ import { parseEnvConfig } from '@cyanheads/mcp-ts-core/config';
 const PUGET_SOUND_BASE_URL = 'https://api.pugetsound.onebusaway.org';
 
 const ServerConfigSchema = z.object({
+  clampLimits: z.stringbool().default(true).describe('Clamp over-limit read inputs to their caps.'),
   apiKey: z
     .string()
     .default('TEST')
@@ -47,6 +48,7 @@ let _config: ServerConfig | undefined;
 
 export function getServerConfig(): ServerConfig {
   _config ??= parseEnvConfig(ServerConfigSchema, {
+    clampLimits: 'ONEBUSAWAY_CLAMP_LIMITS',
     apiKey: 'ONEBUSAWAY_API_KEY',
     baseUrl: 'ONEBUSAWAY_BASE_URL',
     rateLimitRequests: 'ONEBUSAWAY_RATE_LIMIT_REQUESTS',

@@ -4,7 +4,7 @@
  */
 
 import { McpError } from '@cyanheads/mcp-ts-core/errors';
-import { getEnrichment } from '@cyanheads/mcp-ts-core/testing';
+import { getEnrichment, runToolContract } from '@cyanheads/mcp-ts-core/testing';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { findRoutes } from '@/mcp-server/tools/definitions/find-routes.tool.js';
 import { getRoute } from '@/mcp-server/tools/definitions/get-route.tool.js';
@@ -119,7 +119,13 @@ describe('findRoutes', () => {
   it('sends latSpan/lonSpan bounding box instead of radius when both provided', async () => {
     const ctx = createToolContext(findRoutes);
     mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
-    const input = findRoutes.input.parse({ lat: 47.6, lon: -122.3, latSpan: 0.1, lonSpan: 0.2 });
+    const input = findRoutes.input.parse({
+      lat: 47.6,
+      lon: -122.3,
+      latSpan: 0.1,
+      lonSpan: 0.2,
+      radius: 1601,
+    });
     await findRoutes.handler(input, ctx);
     expect(mockService.findRoutes).toHaveBeenCalledWith(
       expect.objectContaining({ latSpan: 0.1, lonSpan: 0.2 }),
@@ -128,6 +134,30 @@ describe('findRoutes', () => {
     expect(mockService.findRoutes).toHaveBeenCalledWith(
       expect.not.objectContaining({ radius: expect.anything() }),
       ctx,
+    );
+    expect(getEnrichment(ctx).notice).not.toContain('radius was reduced');
+  });
+
+  it('clamps radius when radius drives the search', async () => {
+    mockService.findRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
+    const result = await runToolContract(findRoutes, {
+      lat: 47.6,
+      lon: -122.3,
+      radius: 1601,
+    } as never);
+    expect(mockService.findRoutes).toHaveBeenCalledWith(
+      { lat: 47.6, lon: -122.3, radius: 1600 },
+      expect.anything(),
+    );
+    expect(result.structuredContent).toMatchObject({
+      notice: expect.stringContaining('radius was reduced from 1601 to 1600.'),
+    });
+    expect(result.content).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          text: expect.stringContaining('radius was reduced from 1601 to 1600.'),
+        }),
+      ]),
     );
   });
 
@@ -338,6 +368,30 @@ describe('listRoutesForAgency', () => {
 // ---- searchRoutes ----
 
 describe('searchRoutes', () => {
+  it('reports a successful empty result with geographic and agency discovery', async () => {
+    mockService.searchRoutes.mockResolvedValue({ routes: [], limitExceeded: false });
+    const result = await runToolContract(searchRoutes, { query: '45' } as never);
+    expect(result.structuredContent).toMatchObject({
+      routes: [],
+      notice: expect.stringContaining('Name search may be unavailable'),
+    });
+    const text = result.content.map((block) => ('text' in block ? block.text : '')).join('\n');
+    expect(text).toContain('onebusaway_find_routes');
+    expect(text).toContain('onebusaway_list_routes_for_agency');
+  });
+
+  it('applies the route search cap to the dispatch and result', async () => {
+    mockService.searchRoutes.mockResolvedValue({ routes: [ROUTE_FIXTURE], limitExceeded: true });
+    const result = await runToolContract(searchRoutes, { query: '44', maxCount: 6001 });
+    expect(mockService.searchRoutes).toHaveBeenCalledWith(
+      { query: '44', maxCount: 6000 },
+      expect.anything(),
+    );
+    expect(result.structuredContent).toMatchObject({ truncated: true, cap: 6000 });
+    const text = result.content.map((block) => ('text' in block ? block.text : '')).join('\n');
+    expect(text).toContain('maxCount was reduced from 6001 to 6000.');
+    expect(text).not.toMatch(/raise maxCount/i);
+  });
   it('returns matching routes with limitExceeded flag', async () => {
     const ctx = createToolContext(searchRoutes);
     mockService.searchRoutes.mockResolvedValue({ routes: [ROUTE_FIXTURE], limitExceeded: false });

@@ -35,7 +35,7 @@ export const listAgencies = tool('onebusaway_list_agencies', {
                 latSpan: z.number().describe('Latitude span of the coverage area in degrees.'),
                 lonSpan: z.number().describe('Longitude span of the coverage area in degrees.'),
               })
-              .describe("Geographic extent of the agency's service area."),
+              .describe("Full latitude and longitude spans of the agency's service area."),
           })
           .describe('A transit agency with coverage information.'),
       )
@@ -103,7 +103,8 @@ export const listAgencies = tool('onebusaway_list_agencies', {
       lines.push(`**URL:** ${a.url}`);
       lines.push(`**Phone:** ${orNone(a.phone)}`);
       lines.push(
-        `**Coverage center:** ${coords(a.coverageCenter.lat, a.coverageCenter.lon)} (±${a.coverageSpan.latSpan}° lat, ±${a.coverageSpan.lonSpan}° lon)`,
+        `**Coverage center:** ${coords(a.coverageCenter.lat, a.coverageCenter.lon)}`,
+        `**Coverage span (full width):** ${a.coverageSpan.latSpan}° lat, ${a.coverageSpan.lonSpan}° lon`,
       );
     }
     return [{ type: 'text', text: lines.join('\n') }];

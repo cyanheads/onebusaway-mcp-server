@@ -67,6 +67,7 @@ describe('findStops edge cases', () => {
       lon: -122.3146,
       direction: 'N',
       routeIds: [],
+      routes: [],
       wheelchairBoarding: 'UNKNOWN' as const,
     };
     mockService.findStops.mockResolvedValue({ stops: [unicodeStop], limitExceeded: false });
@@ -86,6 +87,7 @@ describe('findStops edge cases', () => {
       lon: -122.3,
       direction: 'SE',
       routeIds: ['1_100259', '1_100262', '40_100001', '40_100002'],
+      routes: [],
       wheelchairBoarding: 'ACCESSIBLE' as const,
     };
     const text = (
@@ -108,6 +110,7 @@ describe('findStops edge cases', () => {
       lon: -122.3,
       direction: '',
       routeIds: [],
+      routes: [],
       wheelchairBoarding: 'NOT_ACCESSIBLE' as const,
     };
     const text = (
@@ -125,6 +128,7 @@ describe('findStops edge cases', () => {
       lon: -122.3,
       direction: 'S',
       routeIds: ['1_100259'],
+      routes: [],
       wheelchairBoarding: 'NOT_ACCESSIBLE' as const,
     };
     const text = (
@@ -146,6 +150,7 @@ describe('getStop edge cases', () => {
       lon: -122.3146123,
       direction: 'N',
       routeIds: [],
+      routes: [],
       wheelchairBoarding: 'UNKNOWN' as const,
     };
     const content = getStop.format!(stop);
@@ -166,6 +171,7 @@ describe('getStop edge cases', () => {
       lon: -122.3146,
       direction: '',
       routeIds: [],
+      routes: [],
       wheelchairBoarding: 'UNKNOWN' as const,
     };
     const text = (getStop.format!(stop)[0] as { text: string }).text;
@@ -241,7 +247,7 @@ describe('listAgencies edge cases', () => {
 // ---- getArrivals edge cases ----
 
 describe('getArrivals edge cases', () => {
-  it('handles stopsAway=0 (at stop) in format output', () => {
+  it('reports zero sequence offset without locating the vehicle', () => {
     const atStop = {
       timezone: 'UTC',
       stopId: '1_75403',
@@ -266,10 +272,10 @@ describe('getArrivals edge cases', () => {
       situations: [],
     };
     const text = (getArrivals.format!(atStop)[0] as { text: string }).text;
-    expect(text).toContain('At stop');
+    expect(text).toContain('**Block stop sequence offset:** 0 (may be unavailable)');
   });
 
-  it('handles stopsAway=-1 (arrived/passed) in format output', () => {
+  it('preserves a negative block stop sequence offset', () => {
     const arrived = {
       timezone: 'UTC',
       stopId: '1_75403',
@@ -294,7 +300,7 @@ describe('getArrivals edge cases', () => {
       situations: [],
     };
     const text = (getArrivals.format!(arrived)[0] as { text: string }).text;
-    expect(text).toContain('Arrived');
+    expect(text).toContain('**Block stop sequence offset:** -1');
   });
 
   it('handles null stopsAway gracefully', () => {
@@ -504,6 +510,8 @@ describe('getTrip edge cases', () => {
       tripHeadsign: 'Downtown',
       blockId: null,
       status: {
+        activeTripId: 'trip_abc',
+        blockTripSequence: 0,
         phase: 'in_progress',
         predicted: true,
         position: { lat: 47.659, lon: -122.315 },
@@ -529,6 +537,8 @@ describe('getTrip edge cases', () => {
       tripHeadsign: 'Downtown',
       blockId: null,
       status: {
+        activeTripId: null,
+        blockTripSequence: null,
         phase: 'layover_before',
         predicted: false,
         position: null,
@@ -569,6 +579,8 @@ describe('getTrip edge cases', () => {
       tripHeadsign: 'Terminus',
       blockId: null,
       status: {
+        activeTripId: 'trip_big',
+        blockTripSequence: 0,
         phase: 'in_progress',
         predicted: true,
         position: null,
@@ -898,6 +910,7 @@ describe('searchStops edge cases', () => {
         lon: -122.3146,
         direction: 'N',
         routeIds: ['1_100259'],
+        routes: [],
         wheelchairBoarding: 'ACCESSIBLE' as const,
       },
       {
@@ -908,6 +921,7 @@ describe('searchStops edge cases', () => {
         lon: -122.315,
         direction: 'S',
         routeIds: [],
+        routes: [],
         wheelchairBoarding: 'UNKNOWN' as const,
       },
     ];

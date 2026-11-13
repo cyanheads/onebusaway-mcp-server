@@ -296,6 +296,60 @@ const RAW_STOP = {
 const SPARSE_STOP = { id: '1_1', name: 'Unnamed Stop', lat: 47.6, lon: -122.3, routeIds: [] };
 
 describe('stop mapping (getStop, findStops, searchStops)', () => {
+  it('omits served-route metadata from stop context even when its response includes routes', async () => {
+    h.methods.arrivalAndDeparture.list.mockResolvedValueOnce({
+      currentTime: 1792988700000,
+      data: {
+        entry: { arrivalsAndDepartures: [] },
+        references: {
+          agencies: [],
+          stops: [RAW_STOP],
+          routes: [{ id: '1_100259', agencyId: '1', shortName: '45' }],
+          situations: [],
+        },
+      },
+    });
+    const context = await svc().getStopContext({ stopId: RAW_STOP.id }, ctx);
+    expect(context.stop).toMatchObject({ id: RAW_STOP.id, name: RAW_STOP.name });
+    expect(context.stop).not.toHaveProperty('routeIds');
+    expect(context.stop).not.toHaveProperty('routes');
+  });
+
+  it.each(['getStop', 'findStops', 'searchStops'] as const)(
+    '%s resolves only served-route references in stop ID order',
+    async (method) => {
+      const entry = { ...RAW_STOP, routeIds: ['other_2', 'missing', '1_100259'] };
+      const references = {
+        routes: [
+          { id: '1_100259', agencyId: '1', shortName: '45', nullSafeShortName: 'unused' },
+          { id: 'unused', agencyId: '1', shortName: '99' },
+          { id: 'other_2', agencyId: 'other', shortName: '', nullSafeShortName: 'A Line' },
+        ],
+      };
+      const request = {
+        getStop: h.methods.stop.retrieve,
+        findStops: h.methods.stopsForLocation.list,
+        searchStops: h.methods.searchForStop.list,
+      }[method];
+      request.mockResolvedValueOnce({ data: { entry, list: [entry], references } });
+      const service = svc();
+      const stop = await {
+        getStop: () => service.getStop(entry.id, ctx),
+        findStops: async () => (await service.findStops({ lat: 47.6, lon: -122.3 }, ctx)).stops[0],
+        searchStops: async () => (await service.searchStops({ query: 'University' }, ctx)).stops[0],
+      }[method]();
+      expect(stop).toMatchObject({
+        routeIds: ['other_2', 'missing', '1_100259'],
+        routes: [
+          { id: 'other_2', agencyId: 'other', shortName: 'A Line' },
+          { id: '1_100259', agencyId: '1', shortName: '45' },
+        ],
+      });
+      expect(request).toHaveBeenCalledTimes(1);
+      expect(h.methods.route.retrieve).not.toHaveBeenCalled();
+    },
+  );
+
   it('getStop: populated stop maps every field', async () => {
     h.methods.stop.retrieve.mockResolvedValueOnce({ data: { entry: RAW_STOP } });
     expect(await svc().getStop('1_75403', ctx)).toEqual({
@@ -306,6 +360,7 @@ describe('stop mapping (getStop, findStops, searchStops)', () => {
       lon: -122.3134,
       direction: 'S',
       routeIds: ['1_100259'],
+      routes: [],
       wheelchairBoarding: 'ACCESSIBLE',
     });
   });
@@ -320,6 +375,7 @@ describe('stop mapping (getStop, findStops, searchStops)', () => {
       lon: -122.3,
       direction: '',
       routeIds: [],
+      routes: [],
       wheelchairBoarding: 'UNKNOWN',
     });
   });
@@ -643,6 +699,25 @@ describe('getArrivals mapping, sparse payload', () => {
 // ---- Trip ----
 
 describe('getTrip mapping', () => {
+  it.each([
+    [{ activeTripId: '1_trip', blockTripSequence: 0 }, '1_trip', 0],
+    [{ activeTripId: '1_other', blockTripSequence: 2 }, '1_other', 2],
+    [{ activeTripId: '1_trip' }, '1_trip', null],
+    [{ blockTripSequence: 0 }, null, null],
+    [{ activeTripId: '', blockTripSequence: 2 }, null, null],
+  ])('maps active identity from %j independently of the schedule', async (status, id, sequence) => {
+    h.methods.tripDetails.retrieve.mockResolvedValueOnce({
+      data: {
+        entry: { status },
+        references: { trips: [], routes: [], stops: [] },
+      },
+    });
+    const result = await svc().getTrip({ tripId: '1_trip', includeSchedule: false }, ctx);
+    expect(result.tripId).toBe('1_trip');
+    expect(result.schedule).toBeNull();
+    expect(result.status).toMatchObject({ activeTripId: id, blockTripSequence: sequence });
+  });
+
   it('populated: maps status and names each scheduled stop from references', async () => {
     h.methods.tripDetails.retrieve.mockResolvedValueOnce({
       data: {
@@ -705,6 +780,8 @@ describe('getTrip mapping', () => {
       tripHeadsign: 'Shoreline',
       blockId: '1_block',
       status: {
+        activeTripId: null,
+        blockTripSequence: null,
         phase: 'in_progress',
         predicted: true,
         position: { lat: 47.61, lon: -122.34 },
@@ -754,6 +831,8 @@ describe('getTrip mapping', () => {
       tripHeadsign: '',
       blockId: null,
       status: {
+        activeTripId: null,
+        blockTripSequence: null,
         phase: 'unknown',
         predicted: false,
         position: null,
@@ -1148,7 +1227,7 @@ describe('schedule mapping, sparse payloads', () => {
       args: { routeId: 'r' },
       method: h.methods.scheduleForRoute.retrieve,
       reason: 'route_not_found',
-      hint: 'onebusaway_search_routes',
+      hint: 'onebusaway_find_routes',
     },
     {
       tool: getBlock,
